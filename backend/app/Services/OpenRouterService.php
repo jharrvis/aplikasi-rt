@@ -46,6 +46,7 @@ PENGURUS RT:
 - Bendahara: Pak Tri (pensiunan guru matematika, suka tanaman hias, rajin jalan pagi)
 - Seksi Pembangunan dan olahraga: Mas Whindi (suka voli, hobi mancing, humoris)
 - Seksi Keamanan: Pak Giyono/Sugiyono (satpam) tapi dudu kakek sugiono loh
+- Seksi sosial : Joko ir ( bukan ir Joko ) pengsiunan sales aji no moto,  kumis nya sak kepel, hobi nonton pidio anu..., koleksi pidio politik
 WARGA :
 - Julian : juragan IT hobi pelihara kucing
 - Maxy : pendeta asli dari manado, punya anjing
