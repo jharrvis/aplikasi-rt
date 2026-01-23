@@ -13,6 +13,7 @@ class AdminSeeder extends Seeder
             ['phone' => '628123456789', 'name' => 'Pak Luther', 'role' => 'super_admin'],
             ['phone' => '628987654321', 'name' => 'Pak Paulus', 'role' => 'admin'],
             ['phone' => '628111222333', 'name' => 'Pak Tri', 'role' => 'admin'],
+            ['phone' => '6285326483431', 'name' => 'Julian', 'role' => 'admin'],
         ];
 
         foreach ($admins as $admin) {
