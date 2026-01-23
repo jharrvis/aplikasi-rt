@@ -286,10 +286,22 @@ class WebhookController extends Controller
 
     protected function normalizePhone($phone)
     {
+        // Remove @s.whatsapp.net or @g.us
+        if (str_contains($phone, '@')) {
+            $phone = explode('@', $phone)[0];
+        }
+
         $phone = preg_replace('/[^0-9]/', '', $phone);
+
         if (str_starts_with($phone, '08')) {
             $phone = '62' . substr($phone, 1);
         }
+
+        // Ensure it starts with 62
+        if (str_starts_with($phone, '8')) {
+            $phone = '62' . $phone;
+        }
+
         return $phone;
     }
 
@@ -331,22 +343,38 @@ class WebhookController extends Controller
     protected function handleJadwal($chatId, $analysis)
     {
         $hari = $analysis['hari'] ?? \Carbon\Carbon::now()->locale('id')->dayName;
+        // Map English to Indonesian if Carbon is not localized correctly
+        $map = [
+            'Monday' => 'Senin',
+            'Tuesday' => 'Selasa',
+            'Wednesday' => 'Rabu',
+            'Thursday' => 'Kamis',
+            'Friday' => 'Jumat',
+            'Saturday' => 'Sabtu',
+            'Sunday' => 'Minggu'
+        ];
+        $hariIndo = $map[\Carbon\Carbon::now()->format('l')] ?? $hari;
 
-        $jadwal = \App\Models\JadwalJaga::with('warga')->where('hari', $hari)->get();
+        $jadwal = \App\Models\JadwalJaga::with('warga')->where('hari', $hariIndo)->get();
+
+        // Get Sender Name for Personalized Reply - using chatId which is the remote JID (phone number)
+        $senderPhone = $this->normalizePhone($chatId);
+        $sender = Warga::where('no_hp', $senderPhone)->first();
+        $senderName = $sender ? ($sender->panggilan ?? $sender->nama) : "Lur";
 
         if ($jadwal->isEmpty()) {
-            $this->wa->sendMessage($chatId, "📅 Tidak ada jadwal jaga untuk hari *{$hari}*, Lur!");
+            $this->wa->sendMessage($chatId, "📅 Waduh... dinten *{$hariIndo}* niki mboten wonten jadwal jaga, Pak/Bu {$senderName}. Sedoyo saged reresik griyo riyen. Hahaha... 😉");
             return;
         }
 
-        $msg = "🌙 *Jadwal Jaga - {$hari}*\n\n";
+        $petugas = $jadwal->map(fn($j) => $j->warga->nama)->toArray();
+        $p1 = $petugas[0] ?? 'Niki sinten nggih...';
+        $p2 = $petugas[1] ?? 'Setunggal malih sinten...';
 
-        foreach ($jadwal as $j) {
-            $icon = $j->jenis_tugas === 'ronda' ? '🚶' : '🔐';
-            $msg .= "{$icon} {$j->warga->nama} ({$j->jenis_tugas})\n";
-        }
-
-        $msg .= "\n_Monggo sing piket, ati-ati nggih!_ 🙏";
+        $msg = "Walah... Pak/Bu {$senderName}, nggih ampun kesupen. Jadwal jaga niku penting, kados dene... ehem... kebutuhan biologis. Ampun ngantos kados kucing garong, mung eling pas butuh tok. Hahaha... 😉\n\n";
+        $msg .= "Dinten niki... bentar tak paringi ngertos... nggodeg-nggodeg buku catetan... 📚\n\n";
+        $msg .= "Oh, dinten *{$hariIndo}* niki sing piket *{$p1}* kalih *{$p2}*.\n\n";
+        $msg .= "Sugeng ndalu, mugi-mugi mboten wonten nyamuk nakal sing ngganggu. Lan mugi-mugi jimpitane lancar kados dalan tol. Amin... 🙏✨";
 
         $this->wa->sendMessage($chatId, $msg);
     }

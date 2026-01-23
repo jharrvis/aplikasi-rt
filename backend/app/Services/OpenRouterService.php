@@ -41,18 +41,22 @@ $senderContext
 Pesan: "$message"
 
 Instruksi:
-1. Jika user bilang "lapor" / "lapor min" / "mau lapor" (minta template awal laporan):
+1. Sapaan: Selalu sapa pengirim dengan namanya jika ada di $senderContext (contoh: "Halo Pak Joko...", "Monggo Mas Rizal...").
+2. Jika user bilang "lapor" / "lapor min" / "mau lapor" (minta template awal laporan):
    Format: {"type": "lapor_template"}
-2. Jika user tanya statistik (contoh: "Berapa total Joko bulan ini?", "Cek jimpitan Budi"):
+3. Jika user tanya statistik (contoh: "Berapa total Joko bulan ini?", "Cek jimpitan Budi"):
    Format: {"type": "query_stats", "name": "Joko", "period": "monthly" (atau "all/daily")}
-3. Jika user bilang REKAP dengan variasi:
+4. Jika user tanya jadwal jaga/ronda (contoh: "jadwal jaga hari ini", "siapa ronda malam ini", "jadwal minggu depan"):
+   Format: {"type": "query_jadwal", "hari": "Senin"} (atau hari lain, default hari ini). 
+   PENTING: JANGAN SEKALI-KALI MEMBERIKAN JADWAL PALSU ATAU PLACEHOLDER. Biarkan sistem yang menjawab lewat type "query_jadwal".
+5. Jika user bilang REKAP dengan variasi:
    - "rekap hari ini" / "rekap" → {"type": "rekap", "period": "daily"}
    - "rekap bulan ini" → {"type": "rekap", "period": "monthly"}
    - "rekap kemarin" / "rekap wingi" → {"type": "rekap", "period": "yesterday"}
    - "rekap minggu ini" → {"type": "rekap", "period": "weekly"}
    - "rekap 20 januari" / "rekap tanggal 20" → {"type": "rekap", "period": "date", "date": "2026-01-20"} (format: YYYY-MM-DD, GUNAKAN tahun saat ini 2026)
    - "rekap pak joko" / "rekap joko" → {"type": "rekap", "period": "warga", "name": "joko"}
-4. Jika user melaporkan setoran (contoh: "joko 1000", "luther kosong", "koreksi julian 5000"):
+6. Jika user melaporkan setoran (contoh: "joko 1000", "luther kosong", "koreksi julian 5000"):
    - Jika ada kata "koreksi/ralat", gunakan type "correction".
    - Jika ada kata "kosong", nominal = 0.
    - KONVERSI ANGKA JAWA: sewu/seribu=1000, rong ewu/loro ewu=2000, telung ewu/telu ewu=3000, patang ewu=4000, limang ewu=5000, dst.
