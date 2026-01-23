@@ -34,21 +34,27 @@ ssh admin@ip-server-anda
 ```
 
 ### a. Clone Repository
-Kita tidak clone langsung ke `public_html`, tapi ke folder terpisah agar lebih rapi karena ada backend & gateway.
+Clone source code langsung ke dalam folder `public_html`, kemudian atur document root di HestiaCP.
 
 ```bash
 # Pastikan di home directory
 cd /home/admin/web/bot.mcimedia.net
 
-# Hapus public_html bawaan (kosong)
-rm -rf public_html
-
-# Clone repo
-git clone https://github.com/jharrvis/aplikasi-rt.git source_code
-
-# Buat Symlink: public_html -> backend/public
-ln -s source_code/backend/public public_html
+# Masuk ke public_html dan clone source code di dalamnya
+cd public_html
+git clone https://github.com/jharrvis/aplikasi-rt.git .
 ```
+*Gunakan `.` (titik) agar clone langsung ke folder saat ini, bukan membuat subfolder baru.*
+
+### b. Set Document Root di HestiaCP
+1. Masuk ke HestiaCP panel.
+2. Ke menu **WEB** → Klik **Edit** pada domain `bot.mcimedia.net`.
+3. Pada bagian **Custom document root**, atur ke:
+   ```
+   /backend/public
+   ```
+4. **Save**.
+
 *Sekarang saat akses `bot.mcimedia.net`, Hestia akan melayani file dari folder Laravel public.*
 
 ---
@@ -58,7 +64,7 @@ ln -s source_code/backend/public public_html
 Masuk ke folder backend:
 
 ```bash
-cd /home/admin/web/bot.mcimedia.net/source_code/backend
+cd /home/admin/web/bot.mcimedia.net/public_html/backend
 ```
 
 ### a. Install Dependencies
@@ -104,7 +110,7 @@ chmod -R 775 storage bootstrap/cache
 
 Masuk ke folder gateway:
 ```bash
-cd /home/admin/web/bot.mcimedia.net/source_code/wa-gateway
+cd /home/admin/web/bot.mcimedia.net/public_html/wa-gateway
 ```
 
 ### a. Install Node Modules
@@ -140,7 +146,7 @@ Agar Reminder & Backup jalan, setup cron job di HestiaCP.
 2.  Klik **Add Cron Job**.
 3.  Command:
     ```bash
-    cd /home/admin/web/bot.mcimedia.net/source_code/backend && /usr/bin/php artisan schedule:run >> /dev/null 2>&1
+    cd /home/admin/web/bot.mcimedia.net/public_html/backend && /usr/bin/php artisan schedule:run >> /dev/null 2>&1
     ```
     *(Pastikan path php `/usr/bin/php` benar, atau gunakan `php` saja)*
 4.  Jadwal: Set semua bintang `* * * * *` (Run every minute).
@@ -156,7 +162,7 @@ Agar Reminder & Backup jalan, setup cron job di HestiaCP.
 ### Catatan Update (Pull Terbaru)
 Jika ada update di GitHub, cukup jalankan:
 ```bash
-cd /home/admin/web/bot.mcimedia.net/source_code
+cd /home/admin/web/bot.mcimedia.net/public_html
 git pull
 cd backend
 php artisan migrate --force
