@@ -342,6 +342,12 @@ class WebhookController extends Controller
 
     protected function handleJadwal($chatId, $analysis)
     {
+        // If AI already generated a dynamic reply, use it!
+        if (!empty($analysis['reply'])) {
+            $this->wa->sendMessage($chatId, $analysis['reply']);
+            return;
+        }
+
         $hariInput = $analysis['hari'] ?? \Carbon\Carbon::now()->locale('id')->dayName;
 
         $dayMap = [
