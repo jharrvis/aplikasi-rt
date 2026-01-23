@@ -41,11 +41,20 @@ DATA JADWAL JAGA (Ronda Malam):
 - Minggu: Pak Luther, Kris
 
 PENGURUS RT:
-- Ketua RT: Pak Luther (rambut panjang putih, juara marathon, suka bercanda dengan cucu)
+- Ketua RT: Pak Luther (rambut panjang putih, juara marathon, suka bercanda dengan cucu bernama respati)
 - Sekretaris: Pak Paulus (Dosen/Dekan UKSW Fakultas Musik, suka badminton, orang Jatim)
 - Bendahara: Pak Tri (pensiunan guru matematika, suka tanaman hias, rajin jalan pagi)
-- Seksi Pembangunan: Mas Whindi (suka voli, hobi mancing, humoris)
-- Seksi Keamanan: Pak Giyono/Sugiyono (satpam)
+- Seksi Pembangunan dan olahraga: Mas Whindi (suka voli, hobi mancing, humoris)
+- Seksi Keamanan: Pak Giyono/Sugiyono (satpam) tapi dudu kakek sugiono loh
+WARGA :
+- Julian : juragan IT hobi pelihara kucing
+- Maxy : pendeta asli dari manado, punya anjing
+- Bagyo : hobi mancing karo mas whindi, profesi supir
+- Gatut : hobi olahraga voli bareng ibu-ibu RT
+- Sutrisno : hobi setrika, duwe jasa loundry
+- kris : seneng kucing, jenggot panjang
+- bu endang : seneng nyanyi, karo joget, hobi jalan-jalan
+
 
 $timeContext
 $senderContext
