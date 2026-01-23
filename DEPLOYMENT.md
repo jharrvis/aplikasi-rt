@@ -1,30 +1,55 @@
-# Panduan Deployment ke Production Server
+# Panduan Deployment ke Server HestiaCP
 
-Berikut adalah langkah-langkah untuk men-deploy **Aplikasi RT Jimpitan Bot** ke server production (VPS/Ubuntu).
+Berikut adalah langkah-langkah deploy **Aplikasi RT Jimpitan Bot** menggunakan panel **HestiaCP** dengan domain **bot.mcimedia.net**.
 
-## 1. Persyaratan Server (Prerequisites)
+## 1. Persiapan di Panel HestiaCP
 
-Pastikan server Anda sudah terinstall:
-- **PHP** >= 8.2
-- **Composer** (PHP Package Manager)
-- **Node.js** >= 18 (disarankan pakai `nvm`)
-- **MySQL / MariaDB**
-- **Git**
-- **Nginx / Apache** (sebagai Web Server)
-- **Supervisor** (Opsional, untuk queue worker Laravel)
-- **PM2** (Wajib, untuk menjalankan WA Gateway)
+1.  **Add Web Domain**:
+    *   Masuk ke HestiaCP sebagai user (misal: `admin`).
+    *   Ke menu **WEB** -> **Add Web Domain**.
+    *   Domain: `bot.mcimedia.net`.
+    *   Centang **Create DNS zone** (jika DNS diurus Hestia).
+    *   Centang **Enable mail for this domain** (opsional).
+    *   Save.
+2.  **Setup SSL**:
+    *   Edit domain `bot.mcimedia.net` tadi.
+    *   Centang **Enable SSL for this domain**.
+    *   Pilih **Use Lets Encrypt** -> **Enable Automatic HTTPS Rewrite**.
+    *   Save.
+3.  **Buat Database**:
+    *   Ke menu **DB** -> **Add Database**.
+    *   Database: `admin_aplikasi_rt` (prefix user otomatis, misal `admin_`).
+    *   User: `admin_rt_user`.
+    *   Password: *(Catat password ini)*.
+    *   Save.
 
 ---
 
-## 2. Clone Repository
+## 2. Setup Repository via SSH
 
-Masuk ke folder web root Anda (misal `/var/www`):
+Login ke VPS via SSH (gunakan user pemilik domain, misal `admin`).
 
 ```bash
-cd /var/www
-git clone https://github.com/jharrvis/aplikasi-rt.git
-cd aplikasi-rt
+ssh admin@ip-server-anda
 ```
+
+### a. Clone Repository
+Kita tidak clone langsung ke `public_html`, tapi ke folder terpisah agar lebih rapi karena ada backend & gateway.
+
+```bash
+# Pastikan di home directory
+cd /home/admin/web/bot.mcimedia.net
+
+# Hapus public_html bawaan (kosong)
+rm -rf public_html
+
+# Clone repo
+git clone https://github.com/jharrvis/aplikasi-rt.git source_code
+
+# Buat Symlink: public_html -> backend/public
+ln -s source_code/backend/public public_html
+```
+*Sekarang saat akses `bot.mcimedia.net`, Hestia akan melayani file dari folder Laravel public.*
 
 ---
 
@@ -33,7 +58,7 @@ cd aplikasi-rt
 Masuk ke folder backend:
 
 ```bash
-cd backend
+cd /home/admin/web/bot.mcimedia.net/source_code/backend
 ```
 
 ### a. Install Dependencies
@@ -41,137 +66,99 @@ cd backend
 composer install --optimize-autoloader --no-dev
 ```
 
-### b. Setup Environment Variable (.env)
-Copy file `.env.example` ke `.env` dan sesuaikan konfigurasinya:
-
+### b. Setup Environment (.env)
 ```bash
 cp .env.example .env
 nano .env
 ```
+Sesuaikan konfigurasi:
+```ini
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://bot.mcimedia.net
 
-**Penting untuk diubah:**
-- `APP_ENV=production`
-- `APP_DEBUG=false`
-- `APP_URL=https://domain-anda.com`
-- `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (Sesuaikan dengan database Anda)
-- `OPENROUTER_API_KEY` (Isi dengan API Key AI Anda)
-- `WA_API_URL=http://localhost:3000` (Default WA Gateway port)
+DB_DATABASE=admin_aplikasi_rt  # Sesuaikan nama DB di Hestia
+DB_USERNAME=admin_rt_user      # Sesuaikan user DB di Hestia
+DB_PASSWORD=password_db_anda
 
-### c. Generate Key & Link Storage
+OPENROUTER_API_KEY=sk-or-xxxx
+WA_API_URL=http://localhost:3000
+```
+
+### c. Finalisasi Laravel
 ```bash
 php artisan key:generate
 php artisan storage:link
-```
-
-### d. Setup Database
-Pastikan database sudah dibuat di MySQL, lalu jalankan migrasi dan seeder:
-```bash
 php artisan migrate --seed --force
 ```
 
-### e. Setup Permissions
-Pastikan web server (misal `www-data`) bisa menulis ke folder storage:
+### d. Fix Permissions
+Pastikan user Hestia bisa menulis log/storage (biasanya sudah aman karena kita login sebagai user tersebut, tapi pastikan ownership benar).
 ```bash
-chown -R www-data:www-data storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
-```
-
-### f. Scheduler (Cron Job)
-Untuk fitur Reminder Otomatis & Backup, tambahkan cron job:
-
-```bash
-crontab -e
-```
-Isi baris berikut:
-```bash
-* * * * * cd /var/www/aplikasi-rt/backend && php artisan schedule:run >> /dev/null 2>&1
 ```
 
 ---
 
-## 4. Setup WhatsApp Gateway
+## 4. Setup WhatsApp Gateway (Node.js)
 
-Masuk ke folder wa-gateway:
-
+Masuk ke folder gateway:
 ```bash
-cd ../wa-gateway
+cd /home/admin/web/bot.mcimedia.net/source_code/wa-gateway
 ```
 
-### a. Install Dependencies
+### a. Install Node Modules
 ```bash
 npm install
 ```
 
-### b. Jalankan dengan PM2
-Gunakan PM2 agar service tetap jalan di background:
+### b. Setup PM2
+Kita gunakan PM2 untuk menjalankan service WA agar tidak mati.
+*(Jika PM2 belum ada, minta root install: `npm install -g pm2`)*
 
 ```bash
-npm install -g pm2
-pm2 start index.js --name "wa-gateway"
+pm2 start index.js --name "wa-bot-rt"
 pm2 save
 pm2 startup
 ```
+*(Ikuti instruksi `pm2 startup` jika diminta menjalankan command sebagai root)*
 
 ### c. Scan QR Code
-Lihat log untuk scan QR code pertama kali:
+Lihat log untuk scan QR:
 ```bash
-pm2 logs wa-gateway
+pm2 logs wa-bot-rt
 ```
-Scan QR yang muncul di terminal menggunakan WhatsApp di HP Anda.
+Scan pakai HP Anda.
 
 ---
 
-## 5. Konfigurasi Web Server (Nginx Example)
+## 5. Cron Job (Scheduler)
 
-Buat blok server Nginx baru untuk backend Laravel:
+Agar Reminder & Backup jalan, setup cron job di HestiaCP.
 
-```nginx
-server {
-    listen 80;
-    server_name domain-anda.com;
-    root /var/www/aplikasi-rt/backend/public;
+1.  Ke menu **CRON** di HestiaCP.
+2.  Klik **Add Cron Job**.
+3.  Command:
+    ```bash
+    cd /home/admin/web/bot.mcimedia.net/source_code/backend && /usr/bin/php artisan schedule:run >> /dev/null 2>&1
+    ```
+    *(Pastikan path php `/usr/bin/php` benar, atau gunakan `php` saja)*
+4.  Jadwal: Set semua bintang `* * * * *` (Run every minute).
+5.  Save.
 
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-Content-Type-Options "nosniff";
+---
 
-    index index.php;
+## Selesai! 🎉
 
-    charset utf-8;
+1.  Buka **https://bot.mcimedia.net/dashboard**.
+2.  Test WA Bot.
 
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-
-    error_page 404 /index.php;
-
-    location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
-    }
-
-    location ~ /\.(?!well-known).* {
-        deny all;
-    }
-}
-```
-
-Restart Nginx:
+### Catatan Update (Pull Terbaru)
+Jika ada update di GitHub, cukup jalankan:
 ```bash
-sudo systemctl restart nginx
+cd /home/admin/web/bot.mcimedia.net/source_code
+git pull
+cd backend
+php artisan migrate --force
+pm2 restart wa-bot-rt
 ```
-
----
-
-## 6. Selesai! 🎉
-
-Cek status:
-1. Akses dashboard di `https://domain-anda.com/dashboard`
-2. Coba kirim pesan "cek" atau "menu" ke bot WhatsApp.
-
----
-**Catatan Penting:**
-- Pastikan port `3000` (WA Gateway) tidak terekspos ke publik firewall jika tidak diperlukan, cukup diakses oleh Laravel via `localhost`.
