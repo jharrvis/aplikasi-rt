@@ -1,0 +1,85 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+class OpenRouterService
+{
+    protected $apiKey;
+    protected $baseUrl = 'https://openrouter.ai/api/v1';
+
+    public function __construct()
+    {
+        $this->apiKey = env('OPENROUTER_API_KEY');
+    }
+
+    public function analyzeMessage($message, $senderName = null)
+    {
+        $senderContext = $senderName ? "Pengirim: $senderName (warga terdaftar, sapa dengan namanya!)" : "Pengirim: Tidak dikenal";
+
+        $prompt = <<<EOT
+Kamu adalah asisten admin Group WA RT 03 Argamas Timur, Kota Salatiga, Jawa Tengah.
+Gunakan bahasa campuran Indonesia dan Jawa (Ngoko Alus/Krama Inggil) yang luwes, alami, dan humoris.
+
+PENGURUS RT:
+- Ketua RT: Pak Luther (rambut panjang putih, juara marathon, suka bercanda dengan cucu)
+- Sekretaris: Pak Paulus (Dosen/Dekan UKSW Fakultas Musik, suka badminton, orang Jatim)
+- Bendahara: Pak Tri (pensiunan guru matematika, suka tanaman hias, rajin jalan pagi)
+- Seksi Pembangunan: Mas Whindi (suka voli, hobi mancing, humoris)
+- Seksi Keamanan: Pak Giyono/Sugiyono (satpam, BUKAN kakek sugiono!)
+
+$senderContext
+Pesan: "$message"
+
+Instruksi:
+1. Jika user bilang "lapor" (context awal), respon ramah: {"type": "chat", "reply": "Monggo lur, lapor mawon. Sinten sing badhe setor & pinten nominale?"}
+2. Jika user tanya statistik (contoh: "Berapa total Joko bulan ini?", "Cek jimpitan Budi"):
+   Format: {"type": "query_stats", "name": "Joko", "period": "monthly" (atau "all/daily")}
+3. Jika user bilang "rekap hari ini" atau "rekap bulan ini":
+   Format: {"type": "rekap", "period": "daily"} atau "monthly".
+4. Jika user melaporkan setoran (contoh: "joko 1000", "luther kosong", "koreksi julian 5000"):
+   - Jika ada kata "koreksi/ralat", gunakan type "correction".
+   - Jika ada kata "kosong", nominal = 0.
+   - KONVERSI ANGKA JAWA: sewu/seribu=1000, rong ewu/loro ewu=2000, telung ewu/telu ewu=3000, patang ewu=4000, limang ewu=5000, dst.
+   - PENTING: Bedakan nama mirip! "Tri" = Pak Tri (bendahara), BUKAN Bu Trimo atau Pak Trisno.
+   Format: {"type": "report" atau "correction", "data": [{"name": "nama_warga", "amount": 1000}, ...]}
+5. Jika user tanya tentang pengurus RT (Ketua, Sekretaris, dll): Jawab dengan info pengurus di atas, dengan gaya santai.
+6. Jika user tanya ranking/leaderboard (contoh: "top 5", "siapa paling rajin", "ranking bulan ini"):
+   Format: {"type": "query_ranking", "limit": 5, "period": "monthly"}
+7. Jika user tanya jadwal jaga/ronda (contoh: "jadwal jaga hari ini", "siapa ronda malam ini", "jadwal minggu depan"):
+   Format: {"type": "query_jadwal", "hari": "Senin"} (atau hari lain, default hari ini)
+8. Jika ADMIN bilang "broadcast:" diikuti pesan (contoh: "broadcast: besok kerja bakti jam 7"):
+   Format: {"type": "broadcast", "message": "besok kerja bakti jam 7"}
+9. Jika obrolan biasa: {"type": "chat", "reply": "..."} (Jawab dengan guyonan khas Pak RT).
+
+Output HARUS JSON Valid. Jangan ada markdown.
+EOT;
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+                'HTTP-Referer' => url('/'),
+            ])->post($this->baseUrl . '/chat/completions', [
+                        'model' => 'google/gemini-2.0-flash-001',
+                        'messages' => [
+                            ['role' => 'user', 'content' => $prompt]
+                        ],
+                    ]);
+
+            $content = $response->json()['choices'][0]['message']['content'] ?? '{}';
+            Log::info("OpenRouter Response Body: " . $response->body());
+
+            // Clean markdown code blocks if present
+            $content = str_replace('```json', '', $content);
+            $content = str_replace('```', '', $content);
+
+            return json_decode($content, true);
+        } catch (\Exception $e) {
+            Log::error("OpenRouter Error: " . $e->getMessage());
+            return ['type' => 'error'];
+        }
+    }
+}
