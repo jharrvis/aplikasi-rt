@@ -62,8 +62,15 @@ Instruksi:
    - Generate jawaban pamit yang lucu atau pura-pura tersinggung tapi tetap humoris.
    - Format: {"type": "mute", "reply": "Isi jawaban pamitmu di sini..."}
 4. Jika user bilang "lapor" / "lapor min" / "mau lapor": {"type": "lapor_template"}
-4. Jika user tanya statistik: {"type": "query_stats", "name": "...", "period": "..."}
-5. Jika user bilang REKAP: {"type": "rekap", "period": "...", ...}
+5. Jika user bilang REKAP dengan variasi:
+   - "rekap" / "rekap hari ini" / "rekap dinten niki" → {"type": "rekap", "period": "daily"}
+   - "rekap bulan ini" / "rekap sasi niki" → {"type": "rekap", "period": "monthly"}
+   - "rekap kemarin" / "rekap wingi" → {"type": "rekap", "period": "yesterday"}
+   - "rekap minggu ini" / "rekap minggu niki" → {"type": "rekap", "period": "weekly"}
+   - "rekap januari" / "rekap sasi januari" → {"type": "rekap", "period": "monthly", "month": 1} (Gunakan nomor bulan 1-12)
+   - "rekap 20 januari" / "rekap tanggal 20" → {"type": "rekap", "period": "date", "date": "2026-01-20"} (YYYY-MM-DD, gunakan tahun 2026)
+   - "rekap pak joko" / "rekap joko" → {"type": "rekap", "period": "warga", "name": "joko"}
+6. Jika user tanya statistik: {"type": "query_stats", "name": "...", "period": "..."}
 6. Jika user melaporkan setoran: {"type": "report" atau "correction", "data": [...]}
 7. Jika tanya pengurus RT: Jawab dengan info pengurus di atas secara santai/humoris.
 8. Jika ADMIN bilang "broadcast:": {"type": "broadcast", "message": "..."}

@@ -219,8 +219,11 @@ class WebhookController extends Controller
         $title = "";
 
         if ($period === 'monthly') {
-            $query->whereMonth('tanggal', now()->month)->whereYear('tanggal', now()->year);
-            $title = "Wulan Niki (" . now()->format('F Y') . ")";
+            $month = $analysis['month'] ?? now()->month;
+            $year = $analysis['year'] ?? now()->year;
+            $query->whereMonth('tanggal', $month)->whereYear('tanggal', $year);
+            $monthName = \Carbon\Carbon::createFromDate($year, $month, 1)->locale('id')->monthName;
+            $title = "Wulan " . ucfirst($monthName) . " " . $year;
         } elseif ($period === 'yesterday') {
             $query->whereDate('tanggal', now()->subDay());
             $title = "Wingi (" . now()->subDay()->format('d M Y') . ")";
