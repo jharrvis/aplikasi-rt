@@ -62,6 +62,8 @@ class WebhookController extends Controller
             $this->handleReport($chatId, $senderId, $analysis);
         } elseif ($analysis['type'] === 'rekap') {
             $this->handleRecap($chatId, $analysis);
+        } elseif ($analysis['type'] === 'lapor_template') {
+            $this->handleLaporTemplate($chatId);
         } elseif ($analysis['type'] === 'query_stats') {
             $this->handleQueryStats($chatId, $analysis);
         } elseif ($analysis['type'] === 'query_ranking') {
@@ -144,6 +146,41 @@ class WebhookController extends Controller
     {
         $period = $analysis['period'] ?? 'daily';
 
+        // Handle warga-specific recap
+        if ($period === 'warga') {
+            $name = $analysis['name'] ?? '';
+            $warga = $this->findWargaFuzzy($name);
+
+            if (!$warga) {
+                $this->wa->sendMessage($chatId, "Sinten niku '$name'? Kulo mboten kenal je.. 😅");
+                return;
+            }
+
+            $transactions = TransaksiJimpitian::where('warga_id', $warga->id)
+                ->orderBy('tanggal', 'desc')
+                ->limit(10)
+                ->get();
+
+            $total = TransaksiJimpitian::where('warga_id', $warga->id)->sum('nominal');
+
+            $msg = "📊 *Rekap Jimpitan {$warga->nama}*\n\n";
+            $msg .= "🏠 Rumah: {$warga->nomor_rumah}\n\n";
+
+            if ($transactions->isEmpty()) {
+                $msg .= "_Dereng wonten catatan setoran._\n";
+            } else {
+                $msg .= "*10 Transaksi Terakhir:*\n";
+                foreach ($transactions as $t) {
+                    $date = \Carbon\Carbon::parse($t->tanggal)->format('d M');
+                    $msg .= "• {$date}: Rp " . number_format($t->nominal) . "\n";
+                }
+            }
+
+            $msg .= "\n💰 *Total Sepanjang Masa: Rp " . number_format($total) . "*";
+            $this->wa->sendMessage($chatId, $msg);
+            return;
+        }
+
         // Group by Warga to sum total per person
         $query = TransaksiJimpitian::selectRaw('warga_id, SUM(nominal) as total_nominal')
             ->with('warga'); // Eager load warga
@@ -153,6 +190,21 @@ class WebhookController extends Controller
         if ($period === 'monthly') {
             $query->whereMonth('tanggal', now()->month)->whereYear('tanggal', now()->year);
             $title = "Wulan Niki (" . now()->format('F Y') . ")";
+        } elseif ($period === 'yesterday') {
+            $query->whereDate('tanggal', now()->subDay());
+            $title = "Wingi (" . now()->subDay()->format('d M Y') . ")";
+        } elseif ($period === 'weekly') {
+            $query->whereBetween('tanggal', [now()->startOfWeek(), now()->endOfWeek()]);
+            $title = "Minggu Niki (" . now()->startOfWeek()->format('d M') . " - " . now()->endOfWeek()->format('d M Y') . ")";
+        } elseif ($period === 'date') {
+            $dateStr = $analysis['date'] ?? now()->format('Y-m-d');
+            try {
+                $date = \Carbon\Carbon::parse($dateStr);
+            } catch (\Exception $e) {
+                $date = now();
+            }
+            $query->whereDate('tanggal', $date);
+            $title = "Tanggal " . $date->format('d M Y');
         } else {
             $query->whereDate('tanggal', now());
             $title = "Dinten Niki (" . now()->format('d M Y') . ")";
@@ -173,9 +225,32 @@ class WebhookController extends Controller
             $msg .= "$num. {$t->warga->nama}: Rp " . number_format($t->total_nominal) . "\n";
         }
 
+        if ($transactions->isEmpty()) {
+            $msg .= "_Dereng wonten catatan setoran._\n";
+        }
+
         $msg .= "\n💰 *Total: Rp " . number_format($total) . "*";
         $msg .= "\n📝 Jumlah: $count Warga (Sing setor)";
         $msg .= "\n\n_Maturnuwun sedoyo warga ingkang sampun tertib!_ 👍";
+
+        $this->wa->sendMessage($chatId, $msg);
+    }
+
+    protected function handleLaporTemplate($chatId)
+    {
+        $wargas = Warga::orderBy('nomor_rumah')->get();
+
+        $msg = "📝 *Template Lapor Jimpitan*\n\n";
+        $msg .= "_Copy, edit nominal, kirim balik:_\n\n";
+
+        foreach ($wargas as $w) {
+            $nama = $w->panggilan ?? $w->nama;
+            $msg .= "{$nama} 1000\n";
+        }
+
+        $msg .= "\n_Tips: Ganti 1000 dengan nominal sebenarnya._\n";
+        $msg .= "_Ketik 'kosong' jika tidak setor._\n";
+        $msg .= "_Contoh: Pak Joko kosong_";
 
         $this->wa->sendMessage($chatId, $msg);
     }

@@ -34,11 +34,17 @@ $senderContext
 Pesan: "$message"
 
 Instruksi:
-1. Jika user bilang "lapor" (context awal), respon ramah: {"type": "chat", "reply": "Monggo lur, lapor mawon. Sinten sing badhe setor & pinten nominale?"}
+1. Jika user bilang "lapor" / "lapor min" / "mau lapor" (minta template awal laporan):
+   Format: {"type": "lapor_template"}
 2. Jika user tanya statistik (contoh: "Berapa total Joko bulan ini?", "Cek jimpitan Budi"):
    Format: {"type": "query_stats", "name": "Joko", "period": "monthly" (atau "all/daily")}
-3. Jika user bilang "rekap hari ini" atau "rekap bulan ini":
-   Format: {"type": "rekap", "period": "daily"} atau "monthly".
+3. Jika user bilang REKAP dengan variasi:
+   - "rekap hari ini" / "rekap" → {"type": "rekap", "period": "daily"}
+   - "rekap bulan ini" → {"type": "rekap", "period": "monthly"}
+   - "rekap kemarin" / "rekap wingi" → {"type": "rekap", "period": "yesterday"}
+   - "rekap minggu ini" → {"type": "rekap", "period": "weekly"}
+   - "rekap 20 januari" / "rekap tanggal 20" → {"type": "rekap", "period": "date", "date": "2026-01-20"} (format: YYYY-MM-DD, GUNAKAN tahun saat ini 2026)
+   - "rekap pak joko" / "rekap joko" → {"type": "rekap", "period": "warga", "name": "joko"}
 4. Jika user melaporkan setoran (contoh: "joko 1000", "luther kosong", "koreksi julian 5000"):
    - Jika ada kata "koreksi/ralat", gunakan type "correction".
    - Jika ada kata "kosong", nominal = 0.
