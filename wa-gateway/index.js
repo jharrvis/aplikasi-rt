@@ -103,7 +103,7 @@ async function connectToWhatsApp() {
 
             // Forward to backend
             try {
-                await axios.post('http://localhost:8000/api/webhook/whatsapp', {
+                await axios.post('https://bot.cekat.biz.id/api/webhook/whatsapp', {
                     message: text,
                     from: jid,
                     messages: [msg]
