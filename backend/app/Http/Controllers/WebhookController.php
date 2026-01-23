@@ -9,6 +9,7 @@ use App\Models\Warga;
 use App\Models\TransaksiJimpitian;
 use App\Models\Admin;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class WebhookController extends Controller
 {
@@ -50,6 +51,29 @@ class WebhookController extends Controller
         $knownWarga = Warga::where('no_hp', $senderPhone)->first();
         $senderName = $knownWarga ? ($knownWarga->panggilan ?? $knownWarga->nama) : null;
 
+        // --- Silence Logic ---
+        $cacheKey = "bot_muted_" . $chatId;
+        $isMuted = Cache::has($cacheKey);
+
+        // Check for wake-up triggers
+        $wakeTriggers = ['ngadimin', 'tangi', 'halo min', 'pagi min', 'siang min', 'sore min', 'malam min', 'oy min'];
+        $shouldWake = false;
+        foreach ($wakeTriggers as $trigger) {
+            if (stripos($msg, $trigger) !== false) {
+                $shouldWake = true;
+                break;
+            }
+        }
+
+        if ($isMuted && !$shouldWake) {
+            return response()->json(['status' => 'muted']);
+        }
+
+        if ($shouldWake) {
+            Cache::forget($cacheKey);
+        }
+        // --- End Silence Logic ---
+
         // 1. Analyze with AI (include sender name for personalized response)
         $analysis = $this->ai->analyzeMessage($msg, $senderName);
         Log::info("AI Analysis:", $analysis ?? []);
@@ -72,6 +96,11 @@ class WebhookController extends Controller
             $this->handleJadwal($chatId, $analysis);
         } elseif ($analysis['type'] === 'broadcast') {
             $this->handleBroadcast($chatId, $senderId, $analysis);
+        } elseif ($analysis['type'] === 'mute') {
+            Cache::put($cacheKey, true, now()->addHours(24)); // Mute for 24 hours or until wake up
+            if (isset($analysis['reply'])) {
+                $this->wa->sendMessage($chatId, $analysis['reply']);
+            }
         } elseif ($analysis['type'] === 'chat' && isset($analysis['reply'])) {
             $this->wa->sendMessage($chatId, $analysis['reply']);
         }

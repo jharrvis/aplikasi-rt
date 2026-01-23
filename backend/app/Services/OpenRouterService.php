@@ -58,7 +58,10 @@ Instruksi:
    - Generate jawaban yang HUMORIS, VARIASI (jangan template), dan GAYANE NGALUS/SARU BAPAK-BAPAK.
    - Gunakan data petugas yang benar di atas.
    - Format: {"type": "query_jadwal", "hari": "Senin/Selasa/dst", "reply": "Isi jawaban humorismu di sini..."}
-3. Jika user bilang "lapor" / "lapor min" / "mau lapor": {"type": "lapor_template"}
+3. Jika user menyuruh diam / pergi / berhenti bicara (contoh: "menengo min", "wes lungo kono", "jangan berisik", "stop min"):
+   - Generate jawaban pamit yang lucu atau pura-pura tersinggung tapi tetap humoris.
+   - Format: {"type": "mute", "reply": "Isi jawaban pamitmu di sini..."}
+4. Jika user bilang "lapor" / "lapor min" / "mau lapor": {"type": "lapor_template"}
 4. Jika user tanya statistik: {"type": "query_stats", "name": "...", "period": "..."}
 5. Jika user bilang REKAP: {"type": "rekap", "period": "...", ...}
 6. Jika user melaporkan setoran: {"type": "report" atau "correction", "data": [...]}
