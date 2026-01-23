@@ -342,28 +342,47 @@ class WebhookController extends Controller
 
     protected function handleJadwal($chatId, $analysis)
     {
-        $hari = $analysis['hari'] ?? \Carbon\Carbon::now()->locale('id')->dayName;
-        // Map English to Indonesian if Carbon is not localized correctly
-        $map = [
-            'Monday' => 'Senin',
-            'Tuesday' => 'Selasa',
-            'Wednesday' => 'Rabu',
-            'Thursday' => 'Kamis',
-            'Friday' => 'Jumat',
-            'Saturday' => 'Sabtu',
-            'Sunday' => 'Minggu'
+        $hariInput = $analysis['hari'] ?? \Carbon\Carbon::now()->locale('id')->dayName;
+
+        $dayMap = [
+            'monday' => 'senin',
+            'tuesday' => 'selasa',
+            'wednesday' => 'rabu',
+            'thursday' => 'kamis',
+            'friday' => 'jumat',
+            'saturday' => 'sabtu',
+            'sunday' => 'minggu',
+            'senin' => 'senin',
+            'selasa' => 'selasa',
+            'rabu' => 'rabu',
+            'kamis' => 'kamis',
+            'jumat' => 'jumat',
+            'sabtu' => 'sabtu',
+            'minggu' => 'minggu'
         ];
-        $hariIndo = $map[\Carbon\Carbon::now()->format('l')] ?? $hari;
 
-        $jadwal = \App\Models\JadwalJaga::with('warga')->where('hari', $hariIndo)->get();
+        $targetDay = $dayMap[strtolower($hariInput)] ?? strtolower($hariInput);
 
-        // Get Sender Name for Personalized Reply - using chatId which is the remote JID (phone number)
+        $displayMap = [
+            'senin' => 'Senin',
+            'selasa' => 'Selasa',
+            'rabu' => 'Rabu',
+            'kamis' => 'Kamis',
+            'jumat' => 'Jumat',
+            'sabtu' => 'Sabtu',
+            'minggu' => 'Minggu'
+        ];
+        $hariDisplay = $displayMap[$targetDay] ?? ucfirst($targetDay);
+
+        $jadwal = \App\Models\JadwalJaga::with('warga')->where('hari', $targetDay)->get();
+
+        // Get Sender Name
         $senderPhone = $this->normalizePhone($chatId);
         $sender = Warga::where('no_hp', $senderPhone)->first();
         $senderName = $sender ? ($sender->panggilan ?? $sender->nama) : "Lur";
 
         if ($jadwal->isEmpty()) {
-            $this->wa->sendMessage($chatId, "📅 Waduh... dinten *{$hariIndo}* niki mboten wonten jadwal jaga, Pak/Bu {$senderName}. Sedoyo saged reresik griyo riyen. Hahaha... 😉");
+            $this->wa->sendMessage($chatId, "📅 Waduh... dinten *{$hariDisplay}* niku mboten wonten jadwal jaga, Pak/Bu {$senderName}. Sedoyo saged reresik griyo riyen. Hahaha... 😉");
             return;
         }
 
@@ -371,9 +390,14 @@ class WebhookController extends Controller
         $p1 = $petugas[0] ?? 'Niki sinten nggih...';
         $p2 = $petugas[1] ?? 'Setunggal malih sinten...';
 
+        // Determine if today or not
+        $today = strtolower(\Carbon\Carbon::now()->locale('id')->dayName);
+        $isToday = ($targetDay === $today);
+        $timeContext = $isToday ? "niki" : "niku";
+
         $msg = "Walah... Pak/Bu {$senderName}, nggih ampun kesupen. Jadwal jaga niku penting, kados dene... ehem... kebutuhan biologis. Ampun ngantos kados kucing garong, mung eling pas butuh tok. Hahaha... 😉\n\n";
-        $msg .= "Dinten niki... bentar tak paringi ngertos... nggodeg-nggodeg buku catetan... 📚\n\n";
-        $msg .= "Oh, dinten *{$hariIndo}* niki sing piket *{$p1}* kalih *{$p2}*.\n\n";
+        $msg .= "Dinten " . ($isToday ? "niki" : $hariDisplay) . "... bentar tak paringi ngertos... nggodeg-nggodeg buku catetan... 📚\n\n";
+        $msg .= "Oh, dinten *{$hariDisplay}* {$timeContext} sing piket *{$p1}* kalih *{$p2}*.\n\n";
         $msg .= "Sugeng ndalu, mugi-mugi mboten wonten nyamuk nakal sing ngganggu. Lan mugi-mugi jimpitane lancar kados dalan tol. Amin... 🙏✨";
 
         $this->wa->sendMessage($chatId, $msg);
