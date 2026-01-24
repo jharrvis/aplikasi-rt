@@ -1,4 +1,4 @@
-import { makeWASocket, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import { makeWASocket, DisconnectReason, useMultiFileAuthState, downloadMediaMessage } from '@whiskeysockets/baileys';
 import express from 'express';
 import pino from 'pino';
 import QRCode from 'qrcode';
@@ -8,7 +8,7 @@ const app = express();
 const port = 3000;
 const SESSION_DIR = 'auth_info_baileys';
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increase limit for media forwarding
 
 let sock;
 let qrCodeData = null;
@@ -20,9 +20,8 @@ async function connectToWhatsApp() {
     sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: true, // User liked this feature
-        browser: ['Aplikasi RT', 'Chrome', '1.0.0'], // FIX FOR 405 ERROR
-        // Stability settings
+        printQRInTerminal: true,
+        browser: ['Aplikasi RT', 'Chrome', '1.0.0'],
         connectTimeoutMs: 60000,
         keepAliveIntervalMs: 10000,
         syncFullHistory: false,
@@ -45,13 +44,10 @@ async function connectToWhatsApp() {
             connectionStatus = 'disconnected';
             qrCodeData = null;
 
-            // Handle Corrupted Session (User's logic)
-            // 428 = Precondition Required, 405 = Method Not Allowed (Handshake fail)
             if (statusCode === 428 || statusCode === 405) {
                 console.log(`Session corrupted (${statusCode}). Cleaning up...`);
                 try {
                     fs.rmSync('./' + SESSION_DIR, { recursive: true, force: true });
-                    console.log('Session deleted. Will request new QR on reconnect.');
                 } catch (e) {
                     console.error('Failed to delete session:', e.message);
                 }
@@ -74,11 +70,29 @@ async function connectToWhatsApp() {
         try {
             const msg = m.messages[0];
             if (!msg.key.fromMe && m.type === 'notify') {
-                // Determine if we should process this message based on user's keywords logic
-                // For now, we forward ALL to Laravel and let Laravel decide (richer logic there)
-                console.log('Forwarding message to Laravel...');
 
-                // Use public domain as 127.0.0.1:80 might be blocked or not listening
+                // OCR FIX: If it's an image, decrypt it on the gateway
+                if (msg.message?.imageMessage) {
+                    console.log('🖼️ Image detected, decrypting...');
+                    try {
+                        const buffer = await downloadMediaMessage(
+                            msg,
+                            'buffer',
+                            {},
+                            {
+                                logger: pino({ level: 'silent' }),
+                                reuploadRequest: sock.updateMediaMessage
+                            }
+                        );
+                        // Attach base64 to payload
+                        msg.message.imageMessage.base64 = buffer.toString('base64');
+                        console.log('✅ Image decrypted successfully');
+                    } catch (err) {
+                        console.error('❌ Failed to decrypt image:', err.message);
+                    }
+                }
+
+                console.log('Forwarding message to Laravel...');
                 const WEBHOOK_URL = 'https://bot.cekat.biz.id/api/webhook/whatsapp';
                 await fetch(WEBHOOK_URL, {
                     method: 'POST',
@@ -133,7 +147,6 @@ app.post('/logout', async (req, res) => {
     }
 });
 
-// Bind to 0.0.0.0 for Hestia/VPS compatibility
 app.listen(port, '0.0.0.0', () => {
     console.log(`WA Gateway listening on port ${port}`);
     connectToWhatsApp();

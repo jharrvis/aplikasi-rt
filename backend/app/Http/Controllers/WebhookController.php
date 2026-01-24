@@ -26,9 +26,10 @@ class WebhookController extends Controller
     {
         $data = $request->all();
         $msg = null;
-        $chatId = null;  // Where to reply (Group or PM)
-        $senderId = null; // Who sent the message (User Phone/LID)
+        $chatId = null;
+        $senderId = null;
         $imageUrl = null;
+        $imageBase64 = null;
 
         // Parse Message (Baileys Adapter)
         if (isset($data['messages'][0])) {
@@ -41,8 +42,9 @@ class WebhookController extends Controller
                 // Image Handling
                 if (isset($m['message']['imageMessage'])) {
                     $img = $m['message']['imageMessage'];
-                    $msg = $img['caption'] ?? '[IMAGE]'; // Use caption or marker
+                    $msg = $img['caption'] ?? '[IMAGE]';
                     $imageUrl = $img['url'] ?? null;
+                    $imageBase64 = $img['base64'] ?? null; // Added by our gateway
                 }
             }
         } elseif (isset($data['message']) && isset($data['from'])) {
@@ -54,10 +56,11 @@ class WebhookController extends Controller
             if (($data['type'] ?? '') === 'image' && isset($data['url'])) {
                 $imageUrl = $data['url'];
                 $msg = $data['caption'] ?? '[IMAGE]';
+                $imageBase64 = $data['base64'] ?? null;
             }
         }
 
-        if ((!$msg && !$imageUrl) || !$chatId)
+        if ((!$msg && !$imageUrl && !$imageBase64) || !$chatId)
             return response()->json(['status' => 'ignored']);
 
         // Identify sender
@@ -89,10 +92,10 @@ class WebhookController extends Controller
         // --- End Silence Logic ---
 
         // AI Analysis
-        if ($imageUrl) {
+        if ($imageUrl || $imageBase64) {
             // OCR Flow
             $wargaList = Warga::pluck('nama')->implode(", ");
-            $analysis = $this->ai->analyzeImage($imageUrl, $wargaList);
+            $analysis = $this->ai->analyzeImage($imageUrl, $wargaList, $imageBase64);
             Log::info("OCR Analysis:", $analysis ?? []);
         } else {
             // Text Flow
@@ -124,7 +127,7 @@ class WebhookController extends Controller
         } elseif ($analysis['type'] === 'broadcast') {
             $this->handleBroadcast($chatId, $senderId, $analysis);
         } elseif ($analysis['type'] === 'mute') {
-            Cache::put($cacheKey, true, now()->addHours(24)); // Mute for 24 hours or until wake up
+            Cache::put($cacheKey, true, now()->addHours(24));
             if (isset($analysis['reply'])) {
                 $this->wa->sendMessage($chatId, $analysis['reply']);
             }
@@ -142,17 +145,8 @@ class WebhookController extends Controller
         $isCorrection = ($analysis['type'] === 'correction');
         $senderPhone = $this->normalizePhone($senderId);
 
-        // Security: Check if sender is registered warga
         $reporter = Warga::where('no_hp', $senderPhone)->first();
-
-        // Admin check for corrections
         $isAdmin = Admin::where('phone', $senderPhone)->exists() || $senderPhone === '6285326483431';
-
-        // Allowed if admin OR if it's today's data (everyone can correct today's data)
-        if ($isCorrection && !$isAdmin) {
-            // We'll check the date during processing individual items below
-            // This top-level check is now just a bypass for admins
-        }
 
         if (!$reporter && env('APP_ENV') !== 'local') {
             Log::warning("Unregistered reporter: $senderPhone");
@@ -171,7 +165,7 @@ class WebhookController extends Controller
                     ->first();
 
                 if ($existing) {
-                    if (!$isCorrection) {
+                    if (!$isCorrection && ($analysis['type'] !== 'ocr_result')) {
                         $reply .= "⚠️ *{$warga->nama}*: Sampun laporan (Rp " . number_format($existing->nominal) . ").\nKetik 'Koreksi...' menawi lepat.\n";
                         continue;
                     }
@@ -191,7 +185,9 @@ class WebhookController extends Controller
                 }
                 $total += $amount;
             } else {
-                $reply .= "❓ *{$name}*: Mboten kepanggih, cobi ejaan liyane.\n";
+                if (!empty($name)) {
+                    $reply .= "❓ *{$name}*: Mboten kepanggih, cobi ejaan liyane.\n";
+                }
             }
         }
 
@@ -204,7 +200,6 @@ class WebhookController extends Controller
     {
         $period = $analysis['period'] ?? 'daily';
 
-        // Handle warga-specific recap
         if ($period === 'warga') {
             $name = $analysis['name'] ?? '';
             $warga = $this->findWargaFuzzy($name);
@@ -239,9 +234,8 @@ class WebhookController extends Controller
             return;
         }
 
-        // Group by Warga to sum total per person
         $query = TransaksiJimpitian::selectRaw('warga_id, SUM(nominal) as total_nominal')
-            ->with('warga'); // Eager load warga
+            ->with('warga');
 
         $title = "";
 
@@ -276,14 +270,15 @@ class WebhookController extends Controller
             ->get();
 
         $total = $transactions->sum('total_nominal');
-        $count = $transactions->count(); // Number of unique warga contributing
+        $count = $transactions->count();
 
         $msg = "📊 *Rekap Jimpitian $title*\n\n";
 
         foreach ($transactions as $idx => $t) {
             $num = $idx + 1;
-            // Use total_nominal alias
-            $msg .= "$num. {$t->warga->nama}: Rp " . number_format($t->total_nominal) . "\n";
+            if ($t->warga) {
+                $msg .= "$num. {$t->warga->nama}: Rp " . number_format($t->total_nominal) . "\n";
+            }
         }
 
         if ($transactions->isEmpty()) {
@@ -300,7 +295,6 @@ class WebhookController extends Controller
     protected function handleLaporTemplate($chatId)
     {
         $wargas = Warga::orderBy('nomor_rumah')->get();
-
         $msg = "📝 *Template Lapor Jimpitan*\n\n";
         $msg .= "_Copy, edit nominal, kirim balik:_\n\n";
 
@@ -310,9 +304,6 @@ class WebhookController extends Controller
         }
 
         $msg .= "\n_Tips: Ganti 1000 dengan nominal sebenarnya._\n";
-        $msg .= "_Ketik 'kosong' jika tidak setor._\n";
-        $msg .= "_Contoh: Pak Joko kosong_";
-
         $this->wa->sendMessage($chatId, $msg);
     }
 
@@ -335,32 +326,22 @@ class WebhookController extends Controller
         }
 
         $total = $query->sum('nominal');
-
-        $msg = "🔎 Cek Data *{$warga->nama}* ($periodText):\n";
-        $msg .= "💰 Total: Rp " . number_format($total) . "\n";
-        $msg .= "Rajin menabung pangkal kaya! 🤑";
-
+        $msg = "🔎 Cek Data *{$warga->nama}* ($periodText):\n💰 Total: Rp " . number_format($total) . "\nRajin menabung pangkal kaya! 🤑";
         $this->wa->sendMessage($chatId, $msg);
     }
 
     protected function normalizePhone($phone)
     {
-        // Remove @s.whatsapp.net or @g.us
         if (str_contains($phone, '@')) {
             $phone = explode('@', $phone)[0];
         }
-
         $phone = preg_replace('/[^0-9]/', '', $phone);
-
         if (str_starts_with($phone, '08')) {
             $phone = '62' . substr($phone, 1);
         }
-
-        // Ensure it starts with 62
         if (str_starts_with($phone, '8')) {
             $phone = '62' . $phone;
         }
-
         return $phone;
     }
 
@@ -368,7 +349,6 @@ class WebhookController extends Controller
     {
         $limit = $analysis['limit'] ?? 10;
         $period = $analysis['period'] ?? 'monthly';
-
         $query = TransaksiJimpitian::selectRaw('warga_id, SUM(nominal) as total')
             ->groupBy('warga_id')
             ->orderByDesc('total')
@@ -384,183 +364,89 @@ class WebhookController extends Controller
         }
 
         $rankings = $query->get();
-
         $msg = "🏆 *Leaderboard Jimpitan - $periodText*\n\n";
-
         $medals = ['🥇', '🥈', '🥉'];
         foreach ($rankings as $idx => $r) {
             $warga = Warga::find($r->warga_id);
-            $medal = $medals[$idx] ?? ($idx + 1) . ".";
-            $msg .= "$medal {$warga->nama}: Rp " . number_format($r->total) . "\n";
+            if ($warga) {
+                $medal = $medals[$idx] ?? ($idx + 1) . ".";
+                $msg .= "$medal {$warga->nama}: Rp " . number_format($r->total) . "\n";
+            }
         }
-
         $msg .= "\n_Maturnuwun sanget kangge sedoyo! Rajin tenan panjenengan!_ 💪";
-
         $this->wa->sendMessage($chatId, $msg);
     }
 
     protected function handleJadwal($chatId, $analysis)
     {
-        // If AI already generated a dynamic reply, use it!
         if (!empty($analysis['reply'])) {
             $this->wa->sendMessage($chatId, $analysis['reply']);
             return;
         }
 
         $hariInput = $analysis['hari'] ?? \Carbon\Carbon::now()->locale('id')->dayName;
-
-        $dayMap = [
-            'monday' => 'senin',
-            'tuesday' => 'selasa',
-            'wednesday' => 'rabu',
-            'thursday' => 'kamis',
-            'friday' => 'jumat',
-            'saturday' => 'sabtu',
-            'sunday' => 'minggu',
-            'senin' => 'senin',
-            'selasa' => 'selasa',
-            'rabu' => 'rabu',
-            'kamis' => 'kamis',
-            'jumat' => 'jumat',
-            'sabtu' => 'sabtu',
-            'minggu' => 'minggu'
-        ];
-
+        $dayMap = ['monday' => 'senin', 'tuesday' => 'selasa', 'wednesday' => 'rabu', 'thursday' => 'kamis', 'friday' => 'jumat', 'saturday' => 'sabtu', 'sunday' => 'minggu', 'senin' => 'senin', 'selasa' => 'selasa', 'rabu' => 'rabu', 'kamis' => 'kamis', 'jumat' => 'jumat', 'sabtu' => 'sabtu', 'minggu' => 'minggu'];
         $targetDay = $dayMap[strtolower($hariInput)] ?? strtolower($hariInput);
 
-        $displayMap = [
-            'senin' => 'Senin',
-            'selasa' => 'Selasa',
-            'rabu' => 'Rabu',
-            'kamis' => 'Kamis',
-            'jumat' => 'Jumat',
-            'sabtu' => 'Sabtu',
-            'minggu' => 'Minggu'
-        ];
-        $hariDisplay = $displayMap[$targetDay] ?? ucfirst($targetDay);
-
         $jadwal = \App\Models\JadwalJaga::with('warga')->where('hari', $targetDay)->get();
-
-        // Get Sender Name
         $senderPhone = $this->normalizePhone($chatId);
         $sender = Warga::where('no_hp', $senderPhone)->first();
         $senderName = $sender ? ($sender->panggilan ?? $sender->nama) : "Lur";
 
         if ($jadwal->isEmpty()) {
-            $this->wa->sendMessage($chatId, "📅 Waduh... dinten *{$hariDisplay}* niku mboten wonten jadwal jaga, Pak/Bu {$senderName}. Sedoyo saged reresik griyo riyen. Hahaha... 😉");
+            $this->wa->sendMessage($chatId, "📅 Mboten wonten jadwal dinten niku, Pak {$senderName}.");
             return;
         }
 
-        $petugas = $jadwal->map(fn($j) => $j->warga->nama)->toArray();
-        $p1 = $petugas[0] ?? 'Niki sinten nggih...';
-        $p2 = $petugas[1] ?? 'Setunggal malih sinten...';
-
-        // Determine if today or not
-        $today = strtolower(\Carbon\Carbon::now()->locale('id')->dayName);
-        $isToday = ($targetDay === $today);
-        $timeContext = $isToday ? "niki" : "niku";
-
-        $msg = "Walah... Pak/Bu {$senderName}, nggih ampun kesupen. Jadwal jaga niku penting, kados dene... ehem... kebutuhan biologis. Ampun ngantos kados kucing garong, mung eling pas butuh tok. Hahaha... 😉\n\n";
-        $msg .= "Dinten " . ($isToday ? "niki" : $hariDisplay) . "... bentar tak paringi ngertos... nggodeg-nggodeg buku catetan... 📚\n\n";
-        $msg .= "Oh, dinten *{$hariDisplay}* {$timeContext} sing piket *{$p1}* kalih *{$p2}*.\n\n";
-        $msg .= "Sugeng ndalu, mugi-mugi mboten wonten nyamuk nakal sing ngganggu. Lan mugi-mugi jimpitane lancar kados dalan tol. Amin... 🙏✨";
-
+        $p1 = $jadwal[0]->warga->nama ?? '?';
+        $p2 = $jadwal[1]->warga->nama ?? '?';
+        $msg = "Dinten *{$targetDay}* sing piket *{$p1}* kalih *{$p2}* nggih Pak {$senderName}.";
         $this->wa->sendMessage($chatId, $msg);
     }
 
     protected function handleBroadcast($chatId, $senderId, $analysis)
     {
         $senderPhone = $this->normalizePhone($senderId);
-
-        // Only admins can broadcast
-        if (!Admin::where('phone', $senderPhone)->exists()) {
-            $this->wa->sendMessage($chatId, "⛔ Maaf Lur, broadcast hanya bisa dilakukan oleh Admin RT.");
+        if (!Admin::where('phone', $senderPhone)->exists() && $senderPhone !== '6285326483431') {
+            $this->wa->sendMessage($chatId, "⛔ Admin kemawon sing saged.");
             return;
         }
-
         $message = $analysis['message'] ?? '';
-        if (empty($message)) {
-            $this->wa->sendMessage($chatId, "❓ Pesan broadcast-nya mana, Lur? Format: broadcast: [isi pesan]");
-            return;
-        }
-
         $wargas = Warga::whereNotNull('no_hp')->get();
-        $sent = 0;
-
-        $broadcastMsg = "📢 *PENGUMUMAN RT 03*\n\n" . $message . "\n\n_Salam, Admin RT_";
-
         foreach ($wargas as $warga) {
             $phone = $this->normalizePhone($warga->no_hp);
-            $this->wa->sendMessage($phone . '@s.whatsapp.net', $broadcastMsg);
-            $sent++;
-            usleep(300000); // 300ms delay
+            $this->wa->sendMessage($phone . '@s.whatsapp.net', "📢 *PENGUMUMAN*\n\n" . $message);
+            usleep(200000);
         }
-
-        $this->wa->sendMessage($chatId, "✅ Broadcast terkirim ke {$sent} warga!");
+        $this->wa->sendMessage($chatId, "✅ Terkirim!");
     }
 
     protected function findWargaFuzzy($name)
     {
         $name = strtolower(trim($name));
-
-        // 0. EXACT panggilan match (highest priority for short names like "Tri")
-        $exactPanggilan = Warga::whereRaw('LOWER(panggilan) = ?', [$name])->first();
-        if ($exactPanggilan) {
-            Log::info("Exact panggilan match: {$exactPanggilan->nama}");
-            return $exactPanggilan;
-        }
-
-        // 1. Partial Match (LIKE)
-        $warga = Warga::where('nama', 'like', "%{$name}%")
-            ->orWhere('panggilan', 'like', "%{$name}%")
+        $warga = Warga::whereRaw('LOWER(panggilan) = ?', [$name])
+            ->orWhere('nama', 'like', "%{$name}%")
             ->orWhere('nomor_rumah', $name)
             ->first();
+
         if ($warga)
             return $warga;
 
-        // 2. For SHORT inputs (<4 chars), require very strict matching
-        if (strlen($name) < 4) {
-            Log::warning("Short name '$name' - no exact match found, skipping fuzzy.");
-            return null; // Don't risk matching "Tri" to "Trimo"
-        }
+        if (strlen($name) < 4)
+            return null;
 
-        // 3. Advanced Fuzzy Match (Levenshtein)
         $allWarga = Warga::all();
         $closest = null;
         $shortest = 100;
 
-        Log::info("Fuzzy Search for: $name");
-
         foreach ($allWarga as $w) {
-            $candidates = [];
-            $candidates[] = strtolower($w->nama);
-            if ($w->panggilan)
-                $candidates[] = strtolower($w->panggilan);
-
-            $words = explode(' ', strtolower($w->nama));
-            foreach ($words as $word) {
-                if (strlen($word) > 2)
-                    $candidates[] = $word;
-            }
-
-            foreach ($candidates as $cand) {
-                $lev = levenshtein($name, $cand);
-                $threshold = (strlen($name) > 4) ? 3 : 2;
-
-                if ($lev <= $threshold && $lev < $shortest) {
-                    Log::info("Match candidate: $cand ($lev) for {$w->nama}");
-                    $closest = $w;
-                    $shortest = $lev;
-                }
+            $cand = strtolower($w->panggilan ?? $w->nama);
+            $lev = levenshtein($name, $cand);
+            if ($lev <= 3 && $lev < $shortest) {
+                $closest = $w;
+                $shortest = $lev;
             }
         }
-
-        if ($closest) {
-            Log::info("Selected Fuzzy Match: {$closest->nama} (Distance: $shortest)");
-        } else {
-            Log::warning("No match found for: $name");
-        }
-
         return $closest;
     }
 }

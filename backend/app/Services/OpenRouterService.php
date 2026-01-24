@@ -102,20 +102,17 @@ EOT;
                     ]);
 
             $content = $response->json()['choices'][0]['message']['content'] ?? '{}';
-            Log::info("OpenRouter Response Body: " . $response->body());
 
-            // Clean markdown code blocks if present
-            $content = str_replace('```json', '', $content);
-            $content = str_replace('```', '', $content);
-
-            return json_decode($content, true);
+            // Clean markdown
+            $content = str_replace(['```json', '```'], '', $content);
+            return json_decode(trim($content), true);
         } catch (\Exception $e) {
             Log::error("OpenRouter Error: " . $e->getMessage());
             return ['type' => 'error'];
         }
     }
 
-    public function analyzeImage($imageUrl, $wargaList)
+    public function analyzeImage($imageUrl, $wargaList, $imageBase64 = null)
     {
         $prompt = <<<EOT
 Analisis gambar ini yang berisi catatan tulisan tangan jimpitan warga.
@@ -135,59 +132,44 @@ JANGAN ada markdown (```json). Langsung JSON.
 EOT;
 
         try {
-            Log::info("OCR Request URL: " . $imageUrl);
+            $imageContent = null;
+            $mimeType = 'image/jpeg';
 
-            // 1. Download image content with better headers
-            $imgResponse = Http::withHeaders([
-                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept' => 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-            ])->get($imageUrl);
+            if ($imageBase64) {
+                // Use direct base64 from gateway
+                $imageContent = base64_decode($imageBase64);
+                Log::info("Using direct Base64 image from gateway (" . strlen($imageContent) . " bytes)");
+            } elseif ($imageUrl) {
+                // Try downloading
+                Log::info("Downloading image from URL: $imageUrl");
+                $imgResponse = Http::withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                ])->get($imageUrl);
 
-            if (!$imgResponse->successful()) {
-                Log::error("Failed to download image from URL. Status: " . $imgResponse->status());
-                return ['type' => 'ocr_error', 'message' => 'Gagal download gambar (Status ' . $imgResponse->status() . ')'];
-            }
-
-            $imageContent = $imgResponse->body();
-            Log::info("Downloaded Image Size: " . strlen($imageContent) . " bytes");
-
-            if (strlen($imageContent) < 1000) {
-                Log::error("Image content too small (" . strlen($imageContent) . " bytes). Probably not a valid image.");
-                return ['type' => 'ocr_error', 'message' => 'Pesan dari WhatsApp bukan gambar yang valid (terlalu kecil).'];
-            }
-
-            // 2. Detect MIME type correctly
-            $finfo = new \finfo(FILEINFO_MIME_TYPE);
-            $mimeType = $finfo->buffer($imageContent);
-            Log::info("Initial Detected MIME Type: " . $mimeType);
-
-            // Manual fallback for magic bytes if finfo returns generic octet-stream
-            if ($mimeType === 'application/octet-stream') {
-                $hex = bin2hex(substr($imageContent, 0, 4));
-                Log::info("MIME fallback check, Header HEX: " . $hex);
-
-                if (str_starts_with($hex, 'ffd8ff')) {
-                    $mimeType = 'image/jpeg';
-                } elseif (str_starts_with($hex, '89504e47')) {
-                    $mimeType = 'image/png';
-                } elseif (str_starts_with($hex, '47494638')) {
-                    $mimeType = 'image/gif';
-                } elseif (str_starts_with($hex, '52494646')) {
-                    $mimeType = 'image/webp';
-                } else {
-                    // WhatsApp images are almost always JPEGs if not specified
-                    $mimeType = 'image/jpeg';
-                    Log::warning("MIME still unknown, forcing image/jpeg for Gemini");
+                if ($imgResponse->successful()) {
+                    $imageContent = $imgResponse->body();
                 }
             }
 
-            Log::info("Final MIME Type used: " . $mimeType);
+            if (!$imageContent || strlen($imageContent) < 1000) {
+                return ['type' => 'ocr_error', 'message' => 'Gagal mendapatkan data gambar yang valid.'];
+            }
 
-            // 3. Base64 Encode
-            $base64Image = base64_encode($imageContent);
-            $dataUri = 'data:' . $mimeType . ';base64,' . $base64Image;
+            // Detect MIME
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($imageContent);
+            if ($mimeType === 'application/octet-stream') {
+                $hex = bin2hex(substr($imageContent, 0, 4));
+                if (str_starts_with($hex, 'ffd8ff'))
+                    $mimeType = 'image/jpeg';
+                elseif (str_starts_with($hex, '89504e47'))
+                    $mimeType = 'image/png';
+                else
+                    $mimeType = 'image/jpeg'; // Probable JPEG
+            }
 
-            // 4. Request OCR
+            $dataUri = 'data:' . $mimeType . ';base64,' . base64_encode($imageContent);
+
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
@@ -198,39 +180,25 @@ EOT;
                             [
                                 'role' => 'user',
                                 'content' => [
-                                    [
-                                        'type' => 'text',
-                                        'text' => $prompt
-                                    ],
-                                    [
-                                        'type' => 'image_url',
-                                        'image_url' => [
-                                            'url' => $dataUri
-                                        ]
-                                    ]
+                                    ['type' => 'text', 'text' => $prompt],
+                                    ['type' => 'image_url', 'image_url' => ['url' => $dataUri]]
                                 ]
                             ]
                         ],
                     ]);
 
-            Log::info("OpenRouter OCR Raw Response: " . $response->body());
-
             $resData = $response->json();
-
             if (isset($resData['error'])) {
-                $errorMsg = $resData['error']['message'] ?? 'Unknown AI Error';
-                return ['type' => 'ocr_error', 'message' => 'AI ngesem: ' . $errorMsg];
+                return ['type' => 'ocr_error', 'message' => 'AI Error: ' . ($resData['error']['message'] ?? 'Unknown')];
             }
 
             $content = $resData['choices'][0]['message']['content'] ?? '{}';
+            $content = str_replace(['```json', '```'], '', $content);
+            return json_decode(trim($content), true);
 
-            $content = str_replace('```json', '', $content);
-            $content = str_replace('```', '', $content);
-
-            return json_decode($content, true);
         } catch (\Exception $e) {
-            Log::error("OpenRouter OCR Error: " . $e->getMessage());
-            return ['type' => 'ocr_error', 'message' => 'Laporan error (logic): ' . $e->getMessage()];
+            Log::error("OCR Exception: " . $e->getMessage());
+            return ['type' => 'ocr_error', 'message' => 'Logic error: ' . $e->getMessage()];
         }
     }
 }
