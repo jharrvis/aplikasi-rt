@@ -24,6 +24,7 @@ Route::middleware('auth:admin')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
     Route::get('/dashboard/wargas', [\App\Http\Controllers\DashboardController::class, 'wargas'])->name('dashboard.wargas');
     Route::get('/dashboard/transaksi', [\App\Http\Controllers\DashboardController::class, 'transaksi'])->name('dashboard.transaksi');
+    Route::get('/dashboard/whatsapp', [\App\Http\Controllers\DashboardController::class, 'whatsapp'])->name('dashboard.whatsapp');
     Route::get('/api/stats', [\App\Http\Controllers\DashboardController::class, 'apiStats']);
 
     // WA Gateway Routes

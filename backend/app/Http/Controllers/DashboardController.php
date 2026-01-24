@@ -72,6 +72,11 @@ class DashboardController extends Controller
         return view('dashboard.transaksi', compact('transactions', 'wargas'));
     }
 
+    public function whatsapp()
+    {
+        return view('dashboard.whatsapp');
+    }
+
     public function apiStats()
     {
         return response()->json($this->getStats());

@@ -264,9 +264,22 @@
             <a href="/dashboard/transaksi" class="nav-item {{ request()->is('dashboard/transaksi*') ? 'active' : '' }}">
                 💰 Transaksi
             </a>
+            <a href="/dashboard/whatsapp" class="nav-item {{ request()->is('dashboard/whatsapp*') ? 'active' : '' }}">
+                📱 WhatsApp Gateway
+            </a>
             <a href="/export/rekap" class="nav-item">
                 📥 Export CSV
             </a>
+
+            <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+                <form action="{{ route('admin.logout') }}" method="POST">
+                    @csrf
+                    <button type="submit" class="nav-item"
+                        style="width: 100%; background: none; border: none; cursor: pointer; color: var(--danger);">
+                        🚪 Logout
+                    </button>
+                </form>
+            </div>
         </nav>
     </aside>
 
