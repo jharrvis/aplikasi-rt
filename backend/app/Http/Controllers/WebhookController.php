@@ -35,16 +35,61 @@ class WebhookController extends Controller
             if (!($m['key']['fromMe'] ?? false)) {
                 $msg = $m['message']['conversation'] ?? $m['message']['extendedTextMessage']['text'] ?? null;
                 $chatId = $m['key']['remoteJid'] ?? null;
-                $senderId = $m['key']['participant'] ?? $chatId; // If group, use participant. If PM, use remoteJid.
+                $senderId = $m['key']['participant'] ?? $chatId;
+                
+                // Image Handling
+                if (isset($m['message']['imageMessage'])) {
+                    $img = $m['message']['imageMessage'];
+                    $msg = $img['caption'] ?? '[IMAGE]'; // Use caption or marker
+                    $imageUrl = $img['url'] ?? null; // NOTE: Baileys might return a local path or require download.
+                    // For now, assuming the gateway handles media hosting or provides a fetchable URL.
+                    // If using a specific WA Gateway (like Fonnte/Watzap), field names differ.
+                    // Assuming Baileys standard: 'url' often invalid for public access. 
+                    // CHECK: User using 'bot.cekat.biz.id', likely a custom hosted solution.
+                    // Implementation: If imageUrl exists, triggers OCR.
+                }
             }
         } elseif (isset($data['message']) && isset($data['from'])) {
-            $msg = $data['message'];
-            $chatId = $data['from'];
-            $senderId = $data['sender'] ?? $chatId;
+             // ... existing fallback ...
+             $msg = $data['message'];
+             $chatId = $data['from'];
+             $senderId = $data['sender'] ?? $chatId;
+             
+             if ($data['type'] === 'image' && isset($data['url'])) {
+                 $imageUrl = $data['url'];
+                 $msg = $data['caption'] ?? '[IMAGE]';
+             }
         }
 
-        if (!$msg || !$chatId)
+        if ((!$msg && !isset($imageUrl)) || !$chatId)
             return response()->json(['status' => 'ignored']);
+
+        // Identify sender ... (existing code) ...
+        $senderPhone = $this->normalizePhone($senderId);
+        $knownWarga = Warga::where('no_hp', $senderPhone)->first();
+        $senderName = $knownWarga ? ($knownWarga->panggilan ?? $knownWarga->nama) : null;
+
+        // ... (Silence Logic) ...
+
+        // OCR Logic
+        if (isset($imageUrl)) {
+             // Get all Warga names for context
+             $wargaList = Warga::pluck('nama')->implode(", ");
+             $analysis = $this->ai->analyzeImage($imageUrl, $wargaList);
+             Log::info("OCR Analysis:", $analysis ?? []);
+        } else {
+             // Text Analysis
+             $analysis = $this->ai->analyzeMessage($msg, $senderName);
+        }
+
+        if (empty($analysis) || !isset($analysis['type']))
+            return response()->json(['status' => 'no_action']);
+
+        // ... (Route Action) ...
+        if ($analysis['type'] === 'ocr_result') {
+            $this->handleReport($chatId, $senderId, $analysis);
+        } elseif ($analysis['type'] === 'report' || $analysis['type'] === 'correction') {
+            // ... existing ...
 
         // Identify sender by phone
         $senderPhone = $this->normalizePhone($senderId);

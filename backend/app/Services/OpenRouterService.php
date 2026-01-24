@@ -81,10 +81,11 @@ Instruksi:
    - "rekap 20 januari" / "rekap tanggal 20" → {"type": "rekap", "period": "date", "date": "2026-01-20"} (YYYY-MM-DD, gunakan tahun 2026)
    - "rekap pak joko" / "rekap joko" → {"type": "rekap", "period": "warga", "name": "joko"}
 6. Jika user tanya statistik: {"type": "query_stats", "name": "...", "period": "..."}
-6. Jika user melaporkan setoran: {"type": "report" atau "correction", "data": [...]}
-7. Jika tanya pengurus RT: Jawab dengan info pengurus di atas secara santai/humoris.
-8. Jika ADMIN bilang "broadcast:": {"type": "broadcast", "message": "..."}
-9. Jika obrolan biasa: {"type": "chat", "reply": "..."}
+7. Jika user tanya ranking/top : {"type": "query_ranking", "period": "..."}
+8. Jika user melaporkan setoran: {"type": "report" atau "correction", "data": [{"name": "...", "amount": 1000}]}
+9. Jika tanya pengurus RT: Jawab dengan info pengurus di atas secara santai/humoris.
+10. Jika ADMIN bilang "broadcast:": {"type": "broadcast", "message": "..."}
+11. Jika obrolan biasa: {"type": "chat", "reply": "..."}
 
 Output HARUS JSON Valid. Jangan ada markdown.
 EOT;
@@ -111,6 +112,64 @@ EOT;
             return json_decode($content, true);
         } catch (\Exception $e) {
             Log::error("OpenRouter Error: " . $e->getMessage());
+            return ['type' => 'error'];
+        }
+    }
+
+    public function analyzeImage($imageUrl, $wargaList)
+    {
+        $prompt = <<<EOT
+Analisis gambar ini yang berisi catatan tulisan tangan jimpitan warga.
+Tugasmu adalah mengekstrak Nama dan Nominal uang.
+
+Daftar Warga Valid (Gunakan untuk koreksi ejaan nama/panggilan):
+$wargaList
+
+Instruksi:
+1. Cari tulisan nama yang mirip dengan Daftar Warga Valid.
+2. Cari angka nominal di sebelahnya (contoh: 500, 1000, 2000). Jika hanya ceklis/coret, asumsikan 1000.
+3. Hiraukan coretan atau baris yang tidak terbaca.
+4. Output HARUS JSON Valid format:
+   {"type": "ocr_result", "data": [{"name": "Nama Warga", "amount": 1000}, ...]}
+
+JANGAN ada markdown (```json). Langsung JSON.
+EOT;
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $this->apiKey,
+                'Content-Type' => 'application/json',
+                'HTTP-Referer' => url('/'),
+            ])->post($this->baseUrl . '/chat/completions', [
+                        'model' => 'google/gemini-2.0-flash-001',
+                        'messages' => [
+                            [
+                                'role' => 'user',
+                                'content' => [
+                                    [
+                                        'type' => 'text',
+                                        'text' => $prompt
+                                    ],
+                                    [
+                                        'type' => 'image_url',
+                                        'image_url' => [
+                                            'url' => $imageUrl
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ],
+                    ]);
+
+            $content = $response->json()['choices'][0]['message']['content'] ?? '{}';
+            Log::info("OCR Response: " . $content);
+
+            $content = str_replace('```json', '', $content);
+            $content = str_replace('```', '', $content);
+
+            return json_decode($content, true);
+        } catch (\Exception $e) {
+            Log::error("OpenRouter OCR Error: " . $e->getMessage());
             return ['type' => 'error'];
         }
     }
