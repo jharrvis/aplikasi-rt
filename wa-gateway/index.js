@@ -54,6 +54,22 @@ async function connectToWhatsApp() {
         }
     });
 
+    sock.ev.on('messages.upsert', async (m) => {
+        try {
+            const msg = m.messages[0];
+            if (!msg.key.fromMe && m.type === 'notify') {
+                console.log('Received message, forwarding to Laravel...');
+                await fetch('http://127.0.0.1/api/webhook/whatsapp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(m)
+                });
+            }
+        } catch (error) {
+            console.error('Error forwarding webhook:', error);
+        }
+    });
+
     sock.ev.on('creds.update', saveCreds);
 }
 
