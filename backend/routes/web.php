@@ -22,7 +22,14 @@ Route::post('/admin/logout', [\App\Http\Controllers\Admin\LoginController::class
 // Dashboard Routes (Protected)
 Route::middleware('auth:admin')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/dashboard/wargas', [\App\Http\Controllers\DashboardController::class, 'wargas'])->name('dashboard.wargas');
+    // Warga CRUD Routes
+    Route::resource('/dashboard/wargas', \App\Http\Controllers\Dashboard\WargaController::class)
+        ->names([
+            'index' => 'dashboard.wargas.index',
+            'store' => 'dashboard.wargas.store',
+            'update' => 'dashboard.wargas.update',
+            'destroy' => 'dashboard.wargas.destroy',
+        ])->except(['create', 'edit', 'show']);
     Route::get('/dashboard/transaksi', [\App\Http\Controllers\DashboardController::class, 'transaksi'])->name('dashboard.transaksi');
     Route::get('/dashboard/whatsapp', [\App\Http\Controllers\DashboardController::class, 'whatsapp'])->name('dashboard.whatsapp');
     Route::get('/api/stats', [\App\Http\Controllers\DashboardController::class, 'apiStats']);

@@ -82,7 +82,7 @@
                     </svg>
                     Dashboard
                 </a>
-                <a href="{{ route('dashboard.wargas') }}"
+                <a href="{{ route('dashboard.wargas.index') }}"
                     class="flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors {{ request()->is('dashboard/wargas*') ? 'text-primary-600 bg-primary-50 dark:bg-primary-900/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24"
                         stroke="currentColor">
