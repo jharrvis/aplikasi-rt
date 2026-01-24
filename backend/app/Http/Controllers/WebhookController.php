@@ -28,6 +28,7 @@ class WebhookController extends Controller
         $msg = null;
         $chatId = null;  // Where to reply (Group or PM)
         $senderId = null; // Who sent the message (User Phone/LID)
+        $imageUrl = null;
 
         // Parse Message (Baileys Adapter)
         if (isset($data['messages'][0])) {
@@ -36,62 +37,30 @@ class WebhookController extends Controller
                 $msg = $m['message']['conversation'] ?? $m['message']['extendedTextMessage']['text'] ?? null;
                 $chatId = $m['key']['remoteJid'] ?? null;
                 $senderId = $m['key']['participant'] ?? $chatId;
-                
+
                 // Image Handling
                 if (isset($m['message']['imageMessage'])) {
                     $img = $m['message']['imageMessage'];
                     $msg = $img['caption'] ?? '[IMAGE]'; // Use caption or marker
-                    $imageUrl = $img['url'] ?? null; // NOTE: Baileys might return a local path or require download.
-                    // For now, assuming the gateway handles media hosting or provides a fetchable URL.
-                    // If using a specific WA Gateway (like Fonnte/Watzap), field names differ.
-                    // Assuming Baileys standard: 'url' often invalid for public access. 
-                    // CHECK: User using 'bot.cekat.biz.id', likely a custom hosted solution.
-                    // Implementation: If imageUrl exists, triggers OCR.
+                    $imageUrl = $img['url'] ?? null;
                 }
             }
         } elseif (isset($data['message']) && isset($data['from'])) {
-             // ... existing fallback ...
-             $msg = $data['message'];
-             $chatId = $data['from'];
-             $senderId = $data['sender'] ?? $chatId;
-             
-             if ($data['type'] === 'image' && isset($data['url'])) {
-                 $imageUrl = $data['url'];
-                 $msg = $data['caption'] ?? '[IMAGE]';
-             }
+            // Fallback
+            $msg = $data['message'];
+            $chatId = $data['from'];
+            $senderId = $data['sender'] ?? $chatId;
+
+            if (($data['type'] ?? '') === 'image' && isset($data['url'])) {
+                $imageUrl = $data['url'];
+                $msg = $data['caption'] ?? '[IMAGE]';
+            }
         }
 
-        if ((!$msg && !isset($imageUrl)) || !$chatId)
+        if ((!$msg && !$imageUrl) || !$chatId)
             return response()->json(['status' => 'ignored']);
 
-        // Identify sender ... (existing code) ...
-        $senderPhone = $this->normalizePhone($senderId);
-        $knownWarga = Warga::where('no_hp', $senderPhone)->first();
-        $senderName = $knownWarga ? ($knownWarga->panggilan ?? $knownWarga->nama) : null;
-
-        // ... (Silence Logic) ...
-
-        // OCR Logic
-        if (isset($imageUrl)) {
-             // Get all Warga names for context
-             $wargaList = Warga::pluck('nama')->implode(", ");
-             $analysis = $this->ai->analyzeImage($imageUrl, $wargaList);
-             Log::info("OCR Analysis:", $analysis ?? []);
-        } else {
-             // Text Analysis
-             $analysis = $this->ai->analyzeMessage($msg, $senderName);
-        }
-
-        if (empty($analysis) || !isset($analysis['type']))
-            return response()->json(['status' => 'no_action']);
-
-        // ... (Route Action) ...
-        if ($analysis['type'] === 'ocr_result') {
-            $this->handleReport($chatId, $senderId, $analysis);
-        } elseif ($analysis['type'] === 'report' || $analysis['type'] === 'correction') {
-            // ... existing ...
-
-        // Identify sender by phone
+        // Identify sender
         $senderPhone = $this->normalizePhone($senderId);
         $knownWarga = Warga::where('no_hp', $senderPhone)->first();
         $senderName = $knownWarga ? ($knownWarga->panggilan ?? $knownWarga->nama) : null;
@@ -104,7 +73,7 @@ class WebhookController extends Controller
         $wakeTriggers = ['ngadimin', 'tangi', 'halo min', 'pagi min', 'siang min', 'sore min', 'malam min', 'oy min'];
         $shouldWake = false;
         foreach ($wakeTriggers as $trigger) {
-            if (stripos($msg, $trigger) !== false) {
+            if (stripos($msg ?? '', $trigger) !== false) {
                 $shouldWake = true;
                 break;
             }
@@ -119,15 +88,26 @@ class WebhookController extends Controller
         }
         // --- End Silence Logic ---
 
-        // 1. Analyze with AI (include sender name for personalized response)
-        $analysis = $this->ai->analyzeMessage($msg, $senderName);
-        Log::info("AI Analysis:", $analysis ?? []);
+        // AI Analysis
+        if ($imageUrl) {
+            // OCR Flow
+            $wargaList = Warga::pluck('nama')->implode(", ");
+            $analysis = $this->ai->analyzeImage($imageUrl, $wargaList);
+            Log::info("OCR Analysis:", $analysis ?? []);
+        } else {
+            // Text Flow
+            $analysis = $this->ai->analyzeMessage($msg, $senderName);
+        }
+
+        Log::info("AI Analysis Result:", $analysis ?? []);
 
         if (empty($analysis) || !isset($analysis['type']))
             return response()->json(['status' => 'no_action']);
 
-        // 2. Route Action
-        if ($analysis['type'] === 'report' || $analysis['type'] === 'correction') {
+        // Route Action
+        if ($analysis['type'] === 'ocr_result') {
+            $this->handleReport($chatId, $senderId, $analysis);
+        } elseif ($analysis['type'] === 'report' || $analysis['type'] === 'correction') {
             $this->handleReport($chatId, $senderId, $analysis);
         } elseif ($analysis['type'] === 'rekap') {
             $this->handleRecap($chatId, $analysis);
