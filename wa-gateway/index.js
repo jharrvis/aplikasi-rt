@@ -101,7 +101,7 @@ app.post('/logout', async (req, res) => {
     }
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
     console.log(`WA Gateway listening on port ${port}`);
     connectToWhatsApp();
 });

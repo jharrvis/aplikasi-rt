@@ -11,7 +11,7 @@ class WhatsAppGatewayService
 
     public function __construct()
     {
-        $this->baseUrl = env('WA_GATEWAY_URL', 'http://localhost:3000');
+        $this->baseUrl = env('WA_GATEWAY_URL', 'http://127.0.0.1:3000');
     }
 
     public function getStatus()
