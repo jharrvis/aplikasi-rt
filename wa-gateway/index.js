@@ -8,7 +8,7 @@ const app = express();
 const port = 3000;
 const SESSION_DIR = 'auth_info_baileys';
 
-app.use(express.json({ limit: '50mb' })); // Increase limit for media forwarding
+app.use(express.json({ limit: '50mb' }));
 
 let sock;
 let qrCodeData = null;
@@ -29,21 +29,17 @@ async function connectToWhatsApp() {
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-
         if (qr) {
             qrCodeData = qr;
             connectionStatus = 'qr_ready';
             console.log('QR Code received');
         }
-
         if (connection === 'close') {
             const statusCode = (lastDisconnect.error)?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-
             console.log(`Connection closed. Status: ${statusCode}, Reconnecting: ${shouldReconnect}`);
             connectionStatus = 'disconnected';
             qrCodeData = null;
-
             if (statusCode === 428 || statusCode === 405) {
                 console.log(`Session corrupted (${statusCode}). Cleaning up...`);
                 try {
@@ -52,7 +48,6 @@ async function connectToWhatsApp() {
                     console.error('Failed to delete session:', e.message);
                 }
             }
-
             if (shouldReconnect) {
                 setTimeout(connectToWhatsApp, 3000);
             }
@@ -65,15 +60,20 @@ async function connectToWhatsApp() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Forward messages to Laravel (Webhook)
     sock.ev.on('messages.upsert', async (m) => {
         try {
             const msg = m.messages[0];
             if (!msg.key.fromMe && m.type === 'notify') {
 
-                // OCR FIX: If it's an image, decrypt it on the gateway
-                if (msg.message?.imageMessage) {
-                    console.log('🖼️ Image detected, decrypting...');
+                // Helper to find the actual message content if nested
+                const messageContent = msg.message;
+                const imageMessage = messageContent?.imageMessage ||
+                    messageContent?.viewOnceMessage?.message?.imageMessage ||
+                    messageContent?.viewOnceMessageV2?.message?.imageMessage ||
+                    messageContent?.ephemeralMessage?.message?.imageMessage;
+
+                if (imageMessage) {
+                    console.log('🖼️ Image detected (including nested), decrypting...');
                     try {
                         const buffer = await downloadMediaMessage(
                             msg,
@@ -84,8 +84,8 @@ async function connectToWhatsApp() {
                                 reuploadRequest: sock.updateMediaMessage
                             }
                         );
-                        // Attach base64 to payload
-                        msg.message.imageMessage.base64 = buffer.toString('base64');
+                        // Attach base64 to the found imageMessage object
+                        imageMessage.base64 = buffer.toString('base64');
                         console.log('✅ Image decrypted successfully');
                     } catch (err) {
                         console.error('❌ Failed to decrypt image:', err.message);
@@ -106,7 +106,6 @@ async function connectToWhatsApp() {
     });
 }
 
-// API Endpoints for Dashboard
 app.get('/status', (req, res) => {
     res.json({ status: connectionStatus });
 });
@@ -127,7 +126,6 @@ app.get('/qr', async (req, res) => {
 app.post('/send-message', async (req, res) => {
     const { number, message } = req.body;
     if (connectionStatus !== 'connected') return res.status(400).json({ error: 'WhatsApp is not connected' });
-
     try {
         const id = number.includes('@') ? number : `${number}@s.whatsapp.net`;
         const sentMsg = await sock.sendMessage(id, { text: message });
