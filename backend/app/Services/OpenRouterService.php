@@ -136,6 +136,8 @@ JANGAN ada markdown (```json). Langsung JSON.
 EOT;
 
         try {
+            Log::info("OCR Request URL: " . $imageUrl);
+
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
@@ -160,6 +162,8 @@ EOT;
                             ]
                         ],
                     ]);
+
+            Log::info("OpenRouter OCR Raw Response: " . $response->body());
 
             $content = $response->json()['choices'][0]['message']['content'] ?? '{}';
             Log::info("OCR Response: " . $content);
