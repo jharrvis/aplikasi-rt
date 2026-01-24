@@ -105,7 +105,9 @@ class WebhookController extends Controller
             return response()->json(['status' => 'no_action']);
 
         // Route Action
-        if ($analysis['type'] === 'ocr_result') {
+        if (($analysis['type'] ?? '') === 'ocr_error') {
+            $this->wa->sendMessage($chatId, "⚠️ " . ($analysis['message'] ?? 'Gagal membaca gambar.'));
+        } elseif ($analysis['type'] === 'ocr_result') {
             $this->handleReport($chatId, $senderId, $analysis);
         } elseif ($analysis['type'] === 'report' || $analysis['type'] === 'correction') {
             $this->handleReport($chatId, $senderId, $analysis);

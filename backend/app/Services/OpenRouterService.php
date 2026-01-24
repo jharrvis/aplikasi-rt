@@ -56,7 +56,6 @@ WARGA :
 - kris : seneng kucing, jenggot panjang
 - bu endang : seneng nyanyi, karo joget, hobi jalan-jalan
 
-
 $timeContext
 $senderContext
 Pesan: "$message"
@@ -138,30 +137,35 @@ EOT;
         try {
             Log::info("OCR Request URL: " . $imageUrl);
 
-            // 1. Download image content with robust headers
+            // 1. Download image content with better headers
             $imgResponse = Http::withHeaders([
                 'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept' => 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
             ])->get($imageUrl);
 
             if (!$imgResponse->successful()) {
-                Log::error("Failed to download image. Status: " . $imgResponse->status());
-                return ['type' => 'error', 'message' => 'Download failed'];
+                Log::error("Failed to download image from URL. Status: " . $imgResponse->status());
+                return ['type' => 'ocr_error', 'message' => 'Gagal download gambar (Status ' . $imgResponse->status() . ')'];
             }
 
             $imageContent = $imgResponse->body();
             Log::info("Downloaded Image Size: " . strlen($imageContent) . " bytes");
 
             if (strlen($imageContent) < 1000) {
-                Log::error("Image too small (" . strlen($imageContent) . " bytes). Probably an error message.");
-                return ['type' => 'error', 'message' => 'Invalid image content'];
+                Log::error("Image content too small (" . strlen($imageContent) . " bytes). Probably not a valid image.");
+                return ['type' => 'ocr_error', 'message' => 'Pesan dari WhatsApp bukan gambar yang valid (terlalu kecil).'];
             }
 
-            // 2. Base64 Encode
-            $base64Image = base64_encode($imageContent);
-            $dataUri = 'data:image/jpeg;base64,' . $base64Image;
+            // 2. Detect MIME type correctly
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($imageContent);
+            Log::info("Detected MIME Type: " . $mimeType);
 
-            // 3. Request OCR
+            // 3. Base64 Encode
+            $base64Image = base64_encode($imageContent);
+            $dataUri = 'data:' . $mimeType . ';base64,' . $base64Image;
+
+            // 4. Request OCR
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
@@ -189,7 +193,14 @@ EOT;
 
             Log::info("OpenRouter OCR Raw Response: " . $response->body());
 
-            $content = $response->json()['choices'][0]['message']['content'] ?? '{}';
+            $resData = $response->json();
+
+            if (isset($resData['error'])) {
+                $errorMsg = $resData['error']['message'] ?? 'Unknown AI Error';
+                return ['type' => 'ocr_error', 'message' => 'Waduh... AI ngesem: ' . $errorMsg];
+            }
+
+            $content = $resData['choices'][0]['message']['content'] ?? '{}';
 
             $content = str_replace('```json', '', $content);
             $content = str_replace('```', '', $content);
@@ -197,7 +208,7 @@ EOT;
             return json_decode($content, true);
         } catch (\Exception $e) {
             Log::error("OpenRouter OCR Error: " . $e->getMessage());
-            return ['type' => 'error'];
+            return ['type' => 'ocr_error', 'message' => 'Laporan error: ' . $e->getMessage()];
         }
     }
 }
