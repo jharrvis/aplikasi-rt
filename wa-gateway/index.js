@@ -46,10 +46,12 @@ async function connectToWhatsApp() {
             qrCodeData = null;
 
             // Handle Corrupted Session (User's logic)
-            if (statusCode === 428) {
-                console.log('Session corrupted (428). Cleaning up...');
+            // 428 = Precondition Required, 405 = Method Not Allowed (Handshake fail)
+            if (statusCode === 428 || statusCode === 405) {
+                console.log(`Session corrupted (${statusCode}). Cleaning up...`);
                 try {
                     fs.rmSync('./' + SESSION_DIR, { recursive: true, force: true });
+                    console.log('Session deleted. Will request new QR on reconnect.');
                 } catch (e) {
                     console.error('Failed to delete session:', e.message);
                 }
