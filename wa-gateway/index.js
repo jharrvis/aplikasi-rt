@@ -2,23 +2,30 @@ import { makeWASocket, DisconnectReason, useMultiFileAuthState } from '@whiskeys
 import express from 'express';
 import pino from 'pino';
 import QRCode from 'qrcode';
+import fs from 'fs';
 
 const app = express();
 const port = 3000;
+const SESSION_DIR = 'auth_info_baileys';
 
 app.use(express.json());
 
 let sock;
 let qrCodeData = null;
-let connectionStatus = 'disconnected'; // disconnected, qr_ready, connecting, connected
+let connectionStatus = 'disconnected';
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
     sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ['Aplikasi RT', 'Chrome', '1.0.0'],
+        printQRInTerminal: true, // User liked this feature
+        browser: ['Aplikasi RT', 'Chrome', '1.0.0'], // FIX FOR 405 ERROR
+        // Stability settings
+        connectTimeoutMs: 60000,
+        keepAliveIntervalMs: 10000,
+        syncFullHistory: false,
     });
 
     sock.ev.on('connection.update', async (update) => {
@@ -31,34 +38,45 @@ async function connectToWhatsApp() {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            const statusCode = (lastDisconnect.error)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-            // Only update status if truly disconnected/logged out
-            if (!shouldReconnect) {
-                connectionStatus = 'disconnected';
-                qrCodeData = null;
-            } else {
-                connectionStatus = 'connecting'; // Reconnecting
+            console.log(`Connection closed. Status: ${statusCode}, Reconnecting: ${shouldReconnect}`);
+            connectionStatus = 'disconnected';
+            qrCodeData = null;
+
+            // Handle Corrupted Session (User's logic)
+            if (statusCode === 428) {
+                console.log('Session corrupted (428). Cleaning up...');
+                try {
+                    fs.rmSync('./' + SESSION_DIR, { recursive: true, force: true });
+                } catch (e) {
+                    console.error('Failed to delete session:', e.message);
+                }
             }
 
             if (shouldReconnect) {
-                // If reconnecting immediately, don't clear QR unless we are sure. 
-                // However, usually a new QR comes with a new connection attempt if needed.
-                connectToWhatsApp();
+                setTimeout(connectToWhatsApp, 3000);
             }
         } else if (connection === 'open') {
-            console.log('opened connection');
+            console.log('Opened connection');
             connectionStatus = 'connected';
             qrCodeData = null;
         }
     });
 
+    sock.ev.on('creds.update', saveCreds);
+
+    // Forward messages to Laravel (Webhook)
     sock.ev.on('messages.upsert', async (m) => {
         try {
             const msg = m.messages[0];
             if (!msg.key.fromMe && m.type === 'notify') {
-                console.log('Received message, forwarding to Laravel...');
+                // Determine if we should process this message based on user's keywords logic
+                // For now, we forward ALL to Laravel and let Laravel decide (richer logic there)
+                console.log('Forwarding message to Laravel...');
+
+                // Use localhost 127.0.0.1 for reliability
                 await fetch('http://127.0.0.1/api/webhook/whatsapp', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -69,11 +87,9 @@ async function connectToWhatsApp() {
             console.error('Error forwarding webhook:', error);
         }
     });
-
-    sock.ev.on('creds.update', saveCreds);
 }
 
-// API Endpoints for Laravel
+// API Endpoints for Dashboard
 app.get('/status', (req, res) => {
     res.json({ status: connectionStatus });
 });
@@ -93,13 +109,10 @@ app.get('/qr', async (req, res) => {
 
 app.post('/send-message', async (req, res) => {
     const { number, message } = req.body;
-
-    if (connectionStatus !== 'connected') {
-        return res.status(400).json({ error: 'WhatsApp is not connected' });
-    }
+    if (connectionStatus !== 'connected') return res.status(400).json({ error: 'WhatsApp is not connected' });
 
     try {
-        const id = number + '@s.whatsapp.net';
+        const id = number.includes('@') ? number : `${number}@s.whatsapp.net`;
         const sentMsg = await sock.sendMessage(id, { text: message });
         res.json({ status: 'success', data: sentMsg });
     } catch (error) {
@@ -117,6 +130,7 @@ app.post('/logout', async (req, res) => {
     }
 });
 
+// Bind to 0.0.0.0 for Hestia/VPS compatibility
 app.listen(port, '0.0.0.0', () => {
     console.log(`WA Gateway listening on port ${port}`);
     connectToWhatsApp();
