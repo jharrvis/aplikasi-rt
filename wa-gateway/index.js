@@ -78,8 +78,9 @@ async function connectToWhatsApp() {
                 // For now, we forward ALL to Laravel and let Laravel decide (richer logic there)
                 console.log('Forwarding message to Laravel...');
 
-                // Use localhost 127.0.0.1 for reliability
-                await fetch('http://127.0.0.1/api/webhook/whatsapp', {
+                // Use public domain as 127.0.0.1:80 might be blocked or not listening
+                const WEBHOOK_URL = 'https://bot.cekat.biz.id/api/webhook/whatsapp';
+                await fetch(WEBHOOK_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(m)
