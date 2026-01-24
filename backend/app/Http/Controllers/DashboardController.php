@@ -65,6 +65,10 @@ class DashboardController extends Controller
         $transactions = $query->orderBy('tanggal', 'desc')->paginate(25);
         $wargas = Warga::orderBy('nama')->get();
 
+        if ($request->ajax()) {
+            return view('dashboard.partials.transaksi_table', compact('transactions', 'wargas'))->render();
+        }
+
         return view('dashboard.transaksi', compact('transactions', 'wargas'));
     }
 
