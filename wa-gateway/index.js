@@ -1,4 +1,4 @@
-import { makePASocket, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import { makeWASocket, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import express from 'express';
 import pino from 'pino';
 import QRCode from 'qrcode';
@@ -15,7 +15,7 @@ let connectionStatus = 'disconnected'; // disconnected, qr_ready, connecting, co
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
-    sock = makePASocket({
+    sock = makeWASocket({
         printQRInTerminal: true,
         auth: state,
         logger: pino({ level: 'silent' }),
