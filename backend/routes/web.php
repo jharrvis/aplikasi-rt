@@ -25,4 +25,9 @@ Route::middleware('auth:admin')->group(function () {
     Route::get('/dashboard/wargas', [\App\Http\Controllers\DashboardController::class, 'wargas'])->name('dashboard.wargas');
     Route::get('/dashboard/transaksi', [\App\Http\Controllers\DashboardController::class, 'transaksi'])->name('dashboard.transaksi');
     Route::get('/api/stats', [\App\Http\Controllers\DashboardController::class, 'apiStats']);
+
+    // WA Gateway Routes
+    Route::get('/admin/wa/status', [\App\Http\Controllers\Admin\WhatsAppController::class, 'getStatus']);
+    Route::get('/admin/wa/qr', [\App\Http\Controllers\Admin\WhatsAppController::class, 'getQr']);
+    Route::post('/admin/wa/logout', [\App\Http\Controllers\Admin\WhatsAppController::class, 'logout']);
 });

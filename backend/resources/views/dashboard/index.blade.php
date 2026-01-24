@@ -8,6 +8,8 @@
         <span style="color: var(--text-secondary);">{{ now()->locale('id')->translatedFormat('l, d F Y') }}</span>
     </div>
 
+    @include('dashboard.partials.wa-status')
+
     <div class="stats-grid">
         <div class="stat-card">
             <div class="label">Total Warga</div>

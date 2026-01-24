@@ -1,3 +1,6 @@
 *_plan.md
 whatsapp plan.md
 task.md
+node_modules
+wa-gateway/node_modules
+wa-gateway/auth_info_baileys
