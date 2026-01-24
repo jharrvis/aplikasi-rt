@@ -19,6 +19,11 @@ Route::get('/admin/login', [\App\Http\Controllers\Admin\LoginController::class, 
 Route::post('/admin/login', [\App\Http\Controllers\Admin\LoginController::class, 'login'])->name('admin.login.post');
 Route::post('/admin/logout', [\App\Http\Controllers\Admin\LoginController::class, 'logout'])->name('admin.logout');
 
+// Fallback for default Auth middleware which looks for 'login' route
+Route::get('/login', function () {
+    return redirect()->route('admin.login');
+})->name('login');
+
 // Dashboard Routes (Protected)
 Route::middleware('auth:admin')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])->name('dashboard');
