@@ -159,7 +159,29 @@ EOT;
             // 2. Detect MIME type correctly
             $finfo = new \finfo(FILEINFO_MIME_TYPE);
             $mimeType = $finfo->buffer($imageContent);
-            Log::info("Detected MIME Type: " . $mimeType);
+            Log::info("Initial Detected MIME Type: " . $mimeType);
+
+            // Manual fallback for magic bytes if finfo returns generic octet-stream
+            if ($mimeType === 'application/octet-stream') {
+                $hex = bin2hex(substr($imageContent, 0, 4));
+                Log::info("MIME fallback check, Header HEX: " . $hex);
+
+                if (str_starts_with($hex, 'ffd8ff')) {
+                    $mimeType = 'image/jpeg';
+                } elseif (str_starts_with($hex, '89504e47')) {
+                    $mimeType = 'image/png';
+                } elseif (str_starts_with($hex, '47494638')) {
+                    $mimeType = 'image/gif';
+                } elseif (str_starts_with($hex, '52494646')) {
+                    $mimeType = 'image/webp';
+                } else {
+                    // WhatsApp images are almost always JPEGs if not specified
+                    $mimeType = 'image/jpeg';
+                    Log::warning("MIME still unknown, forcing image/jpeg for Gemini");
+                }
+            }
+
+            Log::info("Final MIME Type used: " . $mimeType);
 
             // 3. Base64 Encode
             $base64Image = base64_encode($imageContent);
@@ -197,7 +219,7 @@ EOT;
 
             if (isset($resData['error'])) {
                 $errorMsg = $resData['error']['message'] ?? 'Unknown AI Error';
-                return ['type' => 'ocr_error', 'message' => 'Waduh... AI ngesem: ' . $errorMsg];
+                return ['type' => 'ocr_error', 'message' => 'AI ngesem: ' . $errorMsg];
             }
 
             $content = $resData['choices'][0]['message']['content'] ?? '{}';
@@ -208,7 +230,7 @@ EOT;
             return json_decode($content, true);
         } catch (\Exception $e) {
             Log::error("OpenRouter OCR Error: " . $e->getMessage());
-            return ['type' => 'ocr_error', 'message' => 'Laporan error: ' . $e->getMessage()];
+            return ['type' => 'ocr_error', 'message' => 'Laporan error (logic): ' . $e->getMessage()];
         }
     }
 }
