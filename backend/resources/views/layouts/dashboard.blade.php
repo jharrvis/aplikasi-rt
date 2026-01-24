@@ -128,7 +128,7 @@
                         A
                     </div>
                     <div class="flex-1 overflow-hidden">
-                        <p class="text-sm font-semibold truncate">{{ auth()->user()->username ?? 'Admin' }}</p>
+                        <p class="text-sm font-semibold truncate">{{ auth('admin')->user()->name ?? 'Admin' }}</p>
                         <p class="text-xs text-slate-500 truncate">Administrator</p>
                     </div>
                 </div>

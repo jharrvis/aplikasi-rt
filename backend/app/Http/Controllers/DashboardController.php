@@ -47,11 +47,7 @@ class DashboardController extends Controller
         ];
     }
 
-    public function wargas()
-    {
-        $wargas = Warga::orderBy('nama')->paginate(20);
-        return view('dashboard.wargas', compact('wargas'));
-    }
+
 
     public function transaksi(Request $request)
     {
