@@ -17,6 +17,10 @@ class WargaController extends Controller
                 ->orWhere('nomor_rumah', 'like', "%{$search}%");
         })->latest()->paginate(10);
 
+        if ($request->ajax()) {
+            return view('dashboard.partials.wargas_table', compact('wargas'))->render();
+        }
+
         return view('dashboard.wargas', compact('wargas', 'search'));
     }
 
