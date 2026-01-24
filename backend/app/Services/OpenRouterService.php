@@ -138,18 +138,30 @@ EOT;
         try {
             Log::info("OCR Request URL: " . $imageUrl);
 
-            // 1. Download Image Content first
-            $imageContent = file_get_contents($imageUrl);
-            if ($imageContent === false) {
-                Log::error("Failed to download image from URL: " . $imageUrl);
-                return ['type' => 'error', 'message' => 'Failed to download image'];
+            // 1. Download image content with robust headers
+            $imgResponse = Http::withHeaders([
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept' => 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+            ])->get($imageUrl);
+
+            if (!$imgResponse->successful()) {
+                Log::error("Failed to download image. Status: " . $imgResponse->status());
+                return ['type' => 'error', 'message' => 'Download failed'];
             }
 
-            // 2. Convert to Base64 Data URI
+            $imageContent = $imgResponse->body();
+            Log::info("Downloaded Image Size: " . strlen($imageContent) . " bytes");
+
+            if (strlen($imageContent) < 1000) {
+                Log::error("Image too small (" . strlen($imageContent) . " bytes). Probably an error message.");
+                return ['type' => 'error', 'message' => 'Invalid image content'];
+            }
+
+            // 2. Base64 Encode
             $base64Image = base64_encode($imageContent);
             $dataUri = 'data:image/jpeg;base64,' . $base64Image;
 
-            // 3. Send to Gemini
+            // 3. Request OCR
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
@@ -178,7 +190,6 @@ EOT;
             Log::info("OpenRouter OCR Raw Response: " . $response->body());
 
             $content = $response->json()['choices'][0]['message']['content'] ?? '{}';
-            Log::info("OCR Response: " . $content);
 
             $content = str_replace('```json', '', $content);
             $content = str_replace('```', '', $content);
