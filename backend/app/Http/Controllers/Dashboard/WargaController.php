@@ -31,7 +31,7 @@ class WargaController extends Controller
 
         Warga::create($request->all());
 
-        return redirect()->route('dashboard.wargas')->with('success', 'Warga berhasil ditambahkan.');
+        return redirect()->route('dashboard.wargas.index')->with('success', 'Warga berhasil ditambahkan.');
     }
 
     public function update(Request $request, $id)
@@ -46,7 +46,7 @@ class WargaController extends Controller
         $warga = Warga::findOrFail($id);
         $warga->update($request->all());
 
-        return redirect()->route('dashboard.wargas')->with('success', 'Data warga berhasil diperbarui.');
+        return redirect()->route('dashboard.wargas.index')->with('success', 'Data warga berhasil diperbarui.');
     }
 
     public function destroy($id)
@@ -54,6 +54,6 @@ class WargaController extends Controller
         $warga = Warga::findOrFail($id);
         $warga->delete(); // Soft delete
 
-        return redirect()->route('dashboard.wargas')->with('success', 'Warga berhasil diarsipkan.');
+        return redirect()->route('dashboard.wargas.index')->with('success', 'Warga berhasil diarsipkan.');
     }
 }
