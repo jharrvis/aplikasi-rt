@@ -138,6 +138,18 @@ EOT;
         try {
             Log::info("OCR Request URL: " . $imageUrl);
 
+            // 1. Download Image Content first
+            $imageContent = file_get_contents($imageUrl);
+            if ($imageContent === false) {
+                Log::error("Failed to download image from URL: " . $imageUrl);
+                return ['type' => 'error', 'message' => 'Failed to download image'];
+            }
+
+            // 2. Convert to Base64 Data URI
+            $base64Image = base64_encode($imageContent);
+            $dataUri = 'data:image/jpeg;base64,' . $base64Image;
+
+            // 3. Send to Gemini
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type' => 'application/json',
@@ -155,7 +167,7 @@ EOT;
                                     [
                                         'type' => 'image_url',
                                         'image_url' => [
-                                            'url' => $imageUrl
+                                            'url' => $dataUri
                                         ]
                                     ]
                                 ]
