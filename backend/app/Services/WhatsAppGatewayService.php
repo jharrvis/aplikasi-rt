@@ -31,9 +31,9 @@ class WhatsAppGatewayService
             if ($response->successful()) {
                 return $response->json();
             }
-            return null;
+            return ['error' => 'Failed to fetch QR from Gateway. Status: ' . $response->status()];
         } catch (\Exception $e) {
-            return null;
+            return ['error' => 'Connection to Gateway failed: ' . $e->getMessage()];
         }
     }
 

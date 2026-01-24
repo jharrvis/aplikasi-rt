@@ -33,9 +33,18 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
-            connectionStatus = 'disconnected';
-            qrCodeData = null;
+
+            // Only update status if truly disconnected/logged out
+            if (!shouldReconnect) {
+                connectionStatus = 'disconnected';
+                qrCodeData = null;
+            } else {
+                connectionStatus = 'connecting'; // Reconnecting
+            }
+
             if (shouldReconnect) {
+                // If reconnecting immediately, don't clear QR unless we are sure. 
+                // However, usually a new QR comes with a new connection attempt if needed.
                 connectToWhatsApp();
             }
         } else if (connection === 'open') {
