@@ -4,11 +4,7 @@ import pino from 'pino';
 import QRCode from 'qrcode';
 import fs from 'fs';
 
-// Node version check for fetch
 console.log(`Node version: ${process.version}`);
-if (typeof fetch === 'undefined') {
-    console.error('CRITICAL: fetch is not defined. Please upgrade Node.js to 18+ or install node-fetch.');
-}
 
 const app = express();
 const port = 3000;
@@ -72,21 +68,22 @@ async function connectToWhatsApp() {
             const msg = m.messages[0];
             if (!msg.key.fromMe && m.type === 'notify') {
 
-                console.log('Message from:', msg.key.remoteJid);
-                console.log('Message Structure Keys:', Object.keys(msg.message || {}));
+                // Deep clone the object to strip Protobuf classes and get a clean JS object
+                // This ensures our custom properties (like .base64) are not stripped by JSON.stringify
+                const payload = JSON.parse(JSON.stringify(m));
+                const cleanMsg = payload.messages[0];
 
-                // Helper to find the actual message content if nested
-                const messageContent = msg.message;
+                const messageContent = cleanMsg.message;
                 const imageMessage = messageContent?.imageMessage ||
                     messageContent?.viewOnceMessage?.message?.imageMessage ||
                     messageContent?.viewOnceMessageV2?.message?.imageMessage ||
                     messageContent?.ephemeralMessage?.message?.imageMessage;
 
                 if (imageMessage) {
-                    console.log('🖼️ Found ImageMessage (Direct or Nested). Decrypting...');
+                    console.log('🖼️ Image detected, decrypting...');
                     try {
                         const buffer = await downloadMediaMessage(
-                            msg,
+                            msg, // Use the original 'msg' instance for Baileys helper
                             'buffer',
                             {},
                             {
@@ -94,14 +91,12 @@ async function connectToWhatsApp() {
                                 reuploadRequest: sock.updateMediaMessage
                             }
                         );
-                        // Attach base64 to the found imageMessage object
+                        // Attach base64 to our CLONED payload
                         imageMessage.base64 = buffer.toString('base64');
-                        console.log(`✅ Decrypted! Buffer size: ${buffer.length} bytes`);
+                        console.log(`✅ Decrypted! Buffer: ${buffer.length} bytes. Base64 length: ${imageMessage.base64.length}`);
                     } catch (err) {
                         console.error('❌ Failed to decrypt image:', err.message);
                     }
-                } else {
-                    console.log('No ImageMessage found in this message.');
                 }
 
                 console.log('Forwarding to Laravel Webhook...');
@@ -110,7 +105,7 @@ async function connectToWhatsApp() {
                 const response = await fetch(WEBHOOK_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(m)
+                    body: JSON.stringify(payload) // Forward the modified CLONE
                 });
 
                 console.log('Webhook Response Status:', response.status);
