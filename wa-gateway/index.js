@@ -16,9 +16,9 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     sock = makeWASocket({
-        printQRInTerminal: true,
         auth: state,
         logger: pino({ level: 'silent' }),
+        browser: ['Aplikasi RT', 'Chrome', '1.0.0'],
     });
 
     sock.ev.on('connection.update', async (update) => {
