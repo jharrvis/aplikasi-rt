@@ -4,11 +4,17 @@ import pino from 'pino';
 import QRCode from 'qrcode';
 import fs from 'fs';
 
+// Node version check for fetch
+console.log(`Node version: ${process.version}`);
+if (typeof fetch === 'undefined') {
+    console.error('CRITICAL: fetch is not defined. Please upgrade Node.js to 18+ or install node-fetch.');
+}
+
 const app = express();
 const port = 3000;
 const SESSION_DIR = 'auth_info_baileys';
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
 
 let sock;
 let qrCodeData = null;
@@ -62,8 +68,12 @@ async function connectToWhatsApp() {
 
     sock.ev.on('messages.upsert', async (m) => {
         try {
+            console.log(`\n\n--- INCOMING UPSERT (Type: ${m.type}) ---`);
             const msg = m.messages[0];
             if (!msg.key.fromMe && m.type === 'notify') {
+
+                console.log('Message from:', msg.key.remoteJid);
+                console.log('Message Structure Keys:', Object.keys(msg.message || {}));
 
                 // Helper to find the actual message content if nested
                 const messageContent = msg.message;
@@ -73,7 +83,7 @@ async function connectToWhatsApp() {
                     messageContent?.ephemeralMessage?.message?.imageMessage;
 
                 if (imageMessage) {
-                    console.log('🖼️ Image detected (including nested), decrypting...');
+                    console.log('🖼️ Found ImageMessage (Direct or Nested). Decrypting...');
                     try {
                         const buffer = await downloadMediaMessage(
                             msg,
@@ -86,22 +96,27 @@ async function connectToWhatsApp() {
                         );
                         // Attach base64 to the found imageMessage object
                         imageMessage.base64 = buffer.toString('base64');
-                        console.log('✅ Image decrypted successfully');
+                        console.log(`✅ Decrypted! Buffer size: ${buffer.length} bytes`);
                     } catch (err) {
                         console.error('❌ Failed to decrypt image:', err.message);
                     }
+                } else {
+                    console.log('No ImageMessage found in this message.');
                 }
 
-                console.log('Forwarding message to Laravel...');
+                console.log('Forwarding to Laravel Webhook...');
                 const WEBHOOK_URL = 'https://bot.cekat.biz.id/api/webhook/whatsapp';
-                await fetch(WEBHOOK_URL, {
+
+                const response = await fetch(WEBHOOK_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(m)
                 });
+
+                console.log('Webhook Response Status:', response.status);
             }
         } catch (error) {
-            console.error('Error forwarding webhook:', error);
+            console.error('Error in upsert handler:', error);
         }
     });
 }

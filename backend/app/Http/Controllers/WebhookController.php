@@ -25,6 +25,14 @@ class WebhookController extends Controller
     public function handle(Request $request)
     {
         $data = $request->all();
+
+        // DEEP LOGGING: See exactly what the gateway is sending
+        Log::info("--- Webhook Request Received ---");
+        // Log keys only to avoid flooding, or full data if it's not too big
+        if (isset($data['messages'][0]['message'])) {
+            Log::info("Message Body Keys: " . implode(', ', array_keys($data['messages'][0]['message'])));
+        }
+
         $msg = null;
         $chatId = null;
         $senderId = null;
@@ -40,12 +48,20 @@ class WebhookController extends Controller
 
                 // Unwrap message if nested
                 $content = $m['message'] ?? [];
-                if (isset($content['ephemeralMessage']))
+
+                // Deep inspection for nested types
+                if (isset($content['ephemeralMessage'])) {
+                    Log::info("Unwrapping Ephermal Message");
                     $content = $content['ephemeralMessage']['message'] ?? $content;
-                if (isset($content['viewOnceMessage']))
+                }
+                if (isset($content['viewOnceMessage'])) {
+                    Log::info("Unwrapping ViewOnce Message");
                     $content = $content['viewOnceMessage']['message'] ?? $content;
-                if (isset($content['viewOnceMessageV2']))
+                }
+                if (isset($content['viewOnceMessageV2'])) {
+                    Log::info("Unwrapping ViewOnceV2 Message");
                     $content = $content['viewOnceMessageV2']['message'] ?? $content;
+                }
 
                 $msg = $content['conversation'] ?? $content['extendedTextMessage']['text'] ?? null;
 
@@ -54,22 +70,18 @@ class WebhookController extends Controller
                     $img = $content['imageMessage'];
                     $msg = $img['caption'] ?? '[IMAGE]';
                     $imageUrl = $img['url'] ?? null;
-                    $imageBase64 = $img['base64'] ?? null; // Decrypted data from our wa-gateway
-                }
-            }
-        } elseif (isset($data['message']) && isset($data['from'])) {
-            // Fallback
-            $msg = $data['message'];
-            $chatId = $data['from'];
-            $senderId = $data['sender'] ?? $chatId;
+                    $imageBase64 = $img['base64'] ?? null;
 
-            if (($data['type'] ?? '') === 'image' && isset($data['url'])) {
-                $imageUrl = $data['url'];
-                $msg = $data['caption'] ?? '[IMAGE]';
-                $imageBase64 = $data['base64'] ?? null;
+                    if ($imageBase64) {
+                        Log::info("Success! Found imageBase64 in payload (" . strlen($imageBase64) . " chars)");
+                    } else {
+                        Log::warning("Found imageMessage but base64 is MISSING. Keys: " . implode(', ', array_keys($img)));
+                    }
+                }
             }
         }
 
+        // Fallback for non-baileys or direct images
         if ((!$msg && !$imageUrl && !$imageBase64) || !$chatId)
             return response()->json(['status' => 'ignored']);
 
@@ -80,31 +92,29 @@ class WebhookController extends Controller
 
         // --- Silence Logic ---
         $cacheKey = "bot_muted_" . $chatId;
-        $isMuted = Cache::has($cacheKey);
-
-        $wakeTriggers = ['ngadimin', 'tangi', 'halo min', 'pagi min', 'siang min', 'sore min', 'malam min', 'oy min'];
-        $shouldWake = false;
-        foreach ($wakeTriggers as $trigger) {
-            if (stripos($msg ?? '', $trigger) !== false) {
-                $shouldWake = true;
-                break;
+        if (Cache::has($cacheKey)) {
+            $wakeTriggers = ['ngadimin', 'tangi', 'halo min', 'pagi min', 'siang min', 'sore min', 'malam min', 'oy min'];
+            $shouldWake = false;
+            foreach ($wakeTriggers as $trigger) {
+                if (stripos($msg ?? '', $trigger) !== false) {
+                    $shouldWake = true;
+                    break;
+                }
             }
-        }
-
-        if ($isMuted && !$shouldWake)
-            return response()->json(['status' => 'muted']);
-        if ($shouldWake)
+            if (!$shouldWake)
+                return response()->json(['status' => 'muted']);
             Cache::forget($cacheKey);
-        // --- End Silence Logic ---
+        }
 
         // AI Analysis
         if ($imageUrl || $imageBase64) {
             $wargaList = Warga::pluck('nama')->implode(", ");
             $analysis = $this->ai->analyzeImage($imageUrl, $wargaList, $imageBase64);
-            Log::info("OCR Analysis Results:", $analysis ?? []);
         } else {
             $analysis = $this->ai->analyzeMessage($msg, $senderName);
         }
+
+        Log::info("AI Analysis Result Strategy:", ['type' => $analysis['type'] ?? 'none']);
 
         if (empty($analysis) || !isset($analysis['type']))
             return response()->json(['status' => 'no_action']);
@@ -186,10 +196,9 @@ class WebhookController extends Controller
     {
         $period = $analysis['period'] ?? 'daily';
         if ($period === 'warga') {
-            $name = $analysis['name'] ?? '';
-            $warga = $this->findWargaFuzzy($name);
+            $warga = $this->findWargaFuzzy($analysis['name'] ?? '');
             if (!$warga) {
-                $this->wa->sendMessage($chatId, "Sinten niku '$name'? 😅");
+                $this->wa->sendMessage($chatId, "Sinten niku? 😅");
                 return;
             }
             $transactions = TransaksiJimpitian::where('warga_id', $warga->id)->orderBy('tanggal', 'desc')->limit(10)->get();
