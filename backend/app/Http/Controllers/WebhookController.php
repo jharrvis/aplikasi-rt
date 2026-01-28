@@ -92,19 +92,63 @@ class WebhookController extends Controller
 
         // --- Silence Logic ---
         $cacheKey = "bot_muted_" . $chatId;
-        if (Cache::has($cacheKey)) {
-            $wakeTriggers = ['ngadimin', 'tangi', 'halo min', 'pagi min', 'siang min', 'sore min', 'malam min', 'oy min'];
-            $shouldWake = false;
-            foreach ($wakeTriggers as $trigger) {
-                if (stripos($msg ?? '', $trigger) !== false) {
-                    $shouldWake = true;
-                    break;
-                }
+        $lastActivityKey = "bot_last_activity_" . $chatId;
+        $idleTimeoutMinutes = 5;
+
+        // Wake triggers - kata-kata untuk memanggil bot
+        $wakeTriggers = [
+            'ngadimin',
+            'ngadmin',
+            'min',
+            '@min',
+            'halo min',
+            'hai min',
+            'pagi min',
+            'siang min',
+            'sore min',
+            'malam min',
+            'oy min',
+            'oi min',
+            'tangi',
+            'tangi min',
+            'woy min',
+            'woi min',
+            'hey min',
+            'hei min',
+            'min tolong',
+            'ngadimin tolong',
+            'lapor',
+            'rekap',
+            'jadwal'
+        ];
+
+        // Cek apakah pesan mengandung trigger untuk membangunkan bot
+        $msgLower = strtolower($msg ?? '');
+        $shouldWake = false;
+        foreach ($wakeTriggers as $trigger) {
+            if (stripos($msgLower, $trigger) !== false) {
+                $shouldWake = true;
+                break;
             }
-            if (!$shouldWake)
-                return response()->json(['status' => 'muted']);
-            Cache::forget($cacheKey);
         }
+
+        // Cek mute manual atau auto-mute karena idle
+        $isMutedManually = Cache::has($cacheKey);
+        $lastActivity = Cache::get($lastActivityKey);
+        $isIdleTooLong = $lastActivity && now()->diffInMinutes($lastActivity) >= $idleTimeoutMinutes;
+
+        if ($isMutedManually || $isIdleTooLong) {
+            if (!$shouldWake) {
+                Log::info("Bot is silent (muted=" . ($isMutedManually ? 'yes' : 'no') . ", idle=" . ($isIdleTooLong ? 'yes' : 'no') . ")");
+                return response()->json(['status' => 'muted']);
+            }
+            // Bot dipanggil, hapus mute dan reset activity
+            Cache::forget($cacheKey);
+            Log::info("Bot woke up by trigger: $msgLower");
+        }
+
+        // Update last activity timestamp
+        Cache::put($lastActivityKey, now(), now()->addHours(24));
 
         // AI Analysis
         if ($imageUrl || $imageBase64) {
@@ -138,6 +182,8 @@ class WebhookController extends Controller
             $this->handleBroadcast($chatId, $senderId, $analysis);
         } elseif ($analysis['type'] === 'mute') {
             Cache::put($cacheKey, true, now()->addHours(24));
+            Cache::forget($lastActivityKey); // Reset activity saat dimute
+            Log::info("Bot muted by user in chat: $chatId");
             if (isset($analysis['reply']))
                 $this->wa->sendMessage($chatId, $analysis['reply']);
         } elseif ($analysis['type'] === 'chat' && isset($analysis['reply'])) {
