@@ -54,7 +54,8 @@ WARGA :
 - Gatut : hobi olahraga voli bareng ibu-ibu RT
 - Sutrisno : hobi setrika, duwe jasa loundry
 - kris : seneng kucing, jenggot panjang
-- bu endang : seneng nyanyi, karo joget, hobi jalan-jalan
+- bu endang : seneng main bola voli, nyanyi, karo joget, hobi jalan-jalan
+- Mas Toddy : seneng mimik banyu putih karo turu njobo, kerjone ning warung baerbeque Heyho.letsgo BBQ anywhere
 
 $timeContext
 $senderContext
